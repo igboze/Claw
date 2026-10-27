@@ -12,7 +12,9 @@ Top risks first, with where each defence lives in the code.
 | 6 | **Flash-loan votes** | Only locked CLAW (≥1 month) has power; power read at snapshot | `ve` |
 | 7 | **Stale plan** after governance changes rules | Every action carries the hash it was planned under; stale hashes rejected | `spend_check` |
 | 8 | **Indexer lies or lags** | Chain is the source of truth; rows carry block height; anyone can re-run the indexer from deploy height | `services/indexer`, `api /status` |
-| 9 | **Spoofed bounty payee** | TODO before mainnet: NEP-413 signed submission | `bounty-intake` |
+| 9 | **HoS vote not matching holders' choice** | Agent contract casts only the Governor-set mandate; `vote.dao` verifies the snapshot proof; relayer key pays gas only | `agent::hos_vote`, `jobs/tasks/hos.ts` |
+| 10 | **HoS dependency risk**: `venear.dao` upgraded or paused by its owner/guardians | Funds sit in a non-upgradable lockup owned by the agent contract; lock size capped by `max_locked` | `agent/src/hos.rs` |
+| 11 | **Spoofed bounty payee** | TODO before mainnet: NEP-413 signed submission | `bounty-intake` |
 
 ## Assumptions
 

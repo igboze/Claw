@@ -48,6 +48,7 @@ export const proposals = pgTable("proposals", {
   votesAgainst: amount("votes_against").notNull().default("0"),
   votesAbstain: amount("votes_abstain").notNull().default("0"),
   aiSummary: text("ai_summary"),
+  outcome: text("outcome"),
   height: big("height").notNull(),
   updatedHeight: big("updated_height").notNull(),
 });
@@ -138,4 +139,26 @@ export const bountySubmissions = pgTable("bounty_submissions", {
   verdict: text("verdict"),
   paidTx: text("paid_tx"),
   createdAt: ts("created_at").notNull().defaultNow(),
+});
+
+export const hosProposals = pgTable("hos_proposals", {
+  id: integer("id").primaryKey(),
+  title: text("title"),
+  description: text("description"),
+  link: text("link"),
+  proposer: text("proposer").notNull(),
+  status: text("status").notNull(),
+  snapshotBlock: big("snapshot_block"),
+  votingStart: ts("voting_start"),
+  votingEnds: ts("voting_ends"),
+  votes: jsonb("votes"),
+  updatedAt: ts("updated_at").notNull().defaultNow(),
+});
+
+export const hosMandates = pgTable("hos_mandates", {
+  hosProposalId: integer("hos_proposal_id").primaryKey(),
+  vote: text("vote").notNull(),
+  clawdaoProposalId: big("clawdao_proposal_id").notNull(),
+  castVote: text("cast_vote"),
+  height: big("height").notNull(),
 });

@@ -20,6 +20,10 @@ export function formatEvent(kind: string, d: P, web: string): string | null {
       return `🎯 Mission "${str(d.title)}" set: budget ${formatAmount(str(d.budget) || "0")} ${str(d.asset)}. ${web}/missions/${encodeURIComponent(str(d.id))}`;
     case "constitution_updated":
       return d.reason === "genesis" ? null : `📜 Constitution now v${str(d.version)} (${str(d.hash).slice(0, 12)}…). ${web}/constitution`;
+    case "hos_mandate":
+      return `🏛 CLAW holders decided the treasury votes ${str(d.vote)} on House of Stake proposal #${str(d.hos_proposal_id)}. ${web}/hos`;
+    case "hos_vote":
+      return d.success ? `🏛 Treasury veNEAR vote ${str(d.vote)} cast on House of Stake proposal #${str(d.hos_proposal_id)}.` : null;
     case "paused":
       return `⏸ Agent paused by ${str(d.by)}.`;
     default:

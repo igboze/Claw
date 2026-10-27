@@ -82,7 +82,26 @@ export type ProposalKind =
         receiver_id: string;
         actions: { method_name: string; args: string; deposit: U128; gas: U64 }[];
       };
-    };
+    }
+  | { HosManage: { method: HosManageMethod; args_json: string } }
+  | { HosVote: { hos_proposal_id: number } };
+
+/** Agent contract methods a Tier 2 HosManage proposal may call. */
+export const HOS_MANAGE_METHODS = ["hos_lock", "hos_begin_unlock", "hos_end_unlock", "hos_withdraw", "hos_staking"] as const;
+export type HosManageMethod = (typeof HOS_MANAGE_METHODS)[number];
+
+export interface HosInfo {
+  config: { venear_id: string; voting_id: string; max_locked: U128; vote_storage_fee: U128 } | null;
+  lockup_account_id: string | null;
+  locked: U128;
+}
+
+export interface HosMandate {
+  vote: Choice;
+  clawdao_proposal_id: number;
+  cast: Choice | null;
+  pending: boolean;
+}
 
 export interface Proposal {
   id: number;
@@ -99,6 +118,8 @@ export interface Proposal {
   votes_against: U128;
   votes_abstain: U128;
   status: ProposalStatus;
+  /** HosVote winner, set at finalize. */
+  outcome: Choice | null;
 }
 
 export interface LockView {

@@ -31,7 +31,7 @@ deploy "$AGENT" $W/claw_agent/claw_agent.wasm
 
 call "$TOKEN" new "{\"distribution_id\":\"$ROOT\",\"total_supply\":\"$SUPPLY\",\"metadata\":{\"spec\":\"ft-1.0.0\",\"name\":\"IronClaw Coin\",\"symbol\":\"CLAW\",\"decimals\":24}}"
 call "$VE" new "{\"token_id\":\"$TOKEN\",\"governor_id\":\"$GOV\",\"params\":{\"min_months\":1,\"max_months\":24,\"min_lock_amount\":\"1000000000000000000000000\",\"max_power_per_account\":\"50000000000000000000000000000000\"}}"
-call "$GOV" new "{\"ve_id\":\"$VE\",\"constitution_id\":\"$CON\",\"proposal_bond\":\"1000000000000000000000000\",\"tiers\":[
+call "$GOV" new "{\"ve_id\":\"$VE\",\"constitution_id\":\"$CON\",\"agent_id\":\"$AGENT\",\"hos_voting_period_ns\":\"$((2*DAY))\",\"proposal_bond\":\"1000000000000000000000000\",\"tiers\":[
   [1,{\"voting_period_ns\":\"$((7*DAY))\",\"timelock_ns\":\"$((14*DAY))\",\"quorum\":\"50000000000000000000000000000000\",\"threshold_bps\":6667}],
   [2,{\"voting_period_ns\":\"$((5*DAY))\",\"timelock_ns\":\"$((7*DAY))\",\"quorum\":\"30000000000000000000000000000000\",\"threshold_bps\":6000}],
   [3,{\"voting_period_ns\":\"$((3*DAY))\",\"timelock_ns\":\"$((2*DAY))\",\"quorum\":\"10000000000000000000000000000000\",\"threshold_bps\":5001}]]}"

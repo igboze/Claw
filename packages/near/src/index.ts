@@ -1,7 +1,7 @@
 // Minimal, dependency-free NEAR JSON-RPC client plus typed views for each contract.
 // Writes go through wallets (web) or the agent's own key (bridge), never through here.
 
-import type { ConstitutionView, LockView, MissionView, Proposal, Receipt } from "@clawdao/types";
+import type { ConstitutionView, HosInfo, HosMandate, LockView, MissionView, Proposal, Receipt } from "@clawdao/types";
 
 export interface Accounts {
   token: string;
@@ -119,6 +119,52 @@ export class ClawViews {
   approvedMeasurements() {
     return this.rpc.view<unknown[]>(this.accounts.agent, "get_approved_measurements");
   }
+  hosInfo() {
+    return this.rpc.view<HosInfo>(this.accounts.agent, "hos_info");
+  }
+  hosMandate(proposal_id: number) {
+    return this.rpc.view<HosMandate | null>(this.accounts.agent, "hos_mandate", { proposal_id });
+  }
+}
+
+/** Read-only House of Stake views (venear.dao / vote.dao on mainnet). */
+export class HosViews {
+  constructor(readonly rpc: NearRpc, readonly venear: string, readonly voting: string) {}
+
+  /** veNEAR balance (yoctoNEAR-denominated) of an account, e.g. the clawdao treasury. */
+  venearBalance(account_id: string) {
+    return this.rpc.view<string>(this.venear, "ft_balance_of", { account_id });
+  }
+  lockupAccountId(account_id: string) {
+    return this.rpc.view<string>(this.venear, "get_lockup_account_id", { account_id });
+  }
+  /** Merkle proof and raw account at `blockId` (the proposal's snapshot height). */
+  proof(account_id: string, blockId?: number) {
+    return this.rpc.view<[unknown, unknown]>(this.venear, "get_proof", { account_id }, blockId);
+  }
+  numProposals() {
+    return this.rpc.view<number>(this.voting, "get_num_proposals");
+  }
+  proposals(from_index: number, limit = 50) {
+    return this.rpc.view<HosProposal[]>(this.voting, "get_proposals", { from_index, limit });
+  }
+  votingConfig() {
+    return this.rpc.view<Record<string, unknown>>(this.voting, "get_config");
+  }
+}
+
+/** The fields clawdao uses from a vote.dao `ProposalInfo` (flattened Proposal + metadata). */
+export interface HosProposal {
+  id: number;
+  proposer_id: string;
+  status: string;
+  title?: string | null;
+  description?: string | null;
+  link?: string | null;
+  voting_start_time_ns?: string | null;
+  voting_duration_ns: string;
+  snapshot_and_state?: { snapshot: { block_height: number } } | null;
+  votes: { total_venear: string; total_votes: number }[];
 }
 
 /** Parse NEP-297 `EVENT_JSON:` log lines. Non-event logs return null. */

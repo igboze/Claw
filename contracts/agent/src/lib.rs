@@ -26,6 +26,9 @@ use shade_attestation::measurements::{
 use shade_attestation::report_data::ReportData;
 use shade_attestation::tcb_info::HexBytes;
 
+mod hos;
+pub use hos::*;
+
 pub type Ppid = HexBytes<16>;
 
 const GAS_SPEND_CHECK: Gas = Gas::from_tgas(20);
@@ -154,6 +157,7 @@ enum StorageKey {
     Agents,
     WhitelistedAgentsForLocal,
     UsedTasks,
+    HosMandates,
 }
 
 #[near(contract_state)]
@@ -172,6 +176,7 @@ pub struct Contract {
     guardian_id: Option<AccountId>,
     guardian_expiry_block: u64,
     paused: bool,
+    hos: HosState,
 }
 
 #[near]
@@ -204,6 +209,7 @@ impl Contract {
             guardian_id,
             guardian_expiry_block: guardian_expiry_block.0,
             paused: false,
+            hos: HosState::new(),
         }
     }
 

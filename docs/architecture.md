@@ -111,6 +111,12 @@ Constitution (tiers, params, version diff), Missions, Proposals (create, vote, f
 execute, timelock countdown, labelled AI summary), Lock, Agent, Bounties. Detail views use
 query parameters so `pnpm export:ipfs` produces a static mirror for IPFS.
 
+## House of Stake
+
+The agent contract owns a veNEAR lockup on `venear.dao`; CLAW holders mandate how it votes on
+`vote.dao` through `HosVote` proposals, and a relayer casts the mandate with a snapshot proof.
+See [house-of-stake.md](house-of-stake.md).
+
 ## Open question
 
 Confirm with NEAR AI whether IronClaw on NEAR AI Cloud can produce an attestation the

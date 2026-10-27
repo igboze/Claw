@@ -111,7 +111,8 @@ pub async fn apply(tx: &mut Transaction<'_, Postgres>, c: &Ctx<'_>, ev: &Event) 
         "proposal_finalized" => {
             sqlx::query(&format!(
                 "UPDATE proposals SET status = $1, eta = CASE WHEN $2::text IS NULL THEN NULL ELSE {} END,
-                 votes_for = $3::numeric, votes_against = $4::numeric, votes_abstain = $5::numeric, updated_height = $6 WHERE id = $7",
+                 votes_for = $3::numeric, votes_against = $4::numeric, votes_abstain = $5::numeric, updated_height = $6,
+                 outcome = $8 WHERE id = $7",
                 ts(2)
             ))
             .bind(s(d, "status"))
@@ -121,6 +122,7 @@ pub async fn apply(tx: &mut Transaction<'_, Postgres>, c: &Ctx<'_>, ev: &Event) 
             .bind(s(d, "votes_abstain"))
             .bind(h)
             .bind(i(d, "proposal_id"))
+            .bind(opt(d, "outcome"))
             .execute(&mut **tx)
             .await?;
         }
@@ -263,6 +265,26 @@ pub async fn apply(tx: &mut Transaction<'_, Postgres>, c: &Ctx<'_>, ev: &Event) 
         }
         "agent_removed" => {
             sqlx::query("DELETE FROM agent_workers WHERE account_id = $1").bind(s(d, "account_id")).execute(&mut **tx).await?;
+        }
+        "hos_mandate" => {
+            sqlx::query(
+                "INSERT INTO hos_mandates (hos_proposal_id, vote, clawdao_proposal_id, height) VALUES ($1, $2, $3, $4)
+                 ON CONFLICT (hos_proposal_id) DO UPDATE SET vote = EXCLUDED.vote, clawdao_proposal_id = EXCLUDED.clawdao_proposal_id, height = EXCLUDED.height",
+            )
+            .bind(i(d, "hos_proposal_id") as i32)
+            .bind(s(d, "vote"))
+            .bind(i(d, "clawdao_proposal_id"))
+            .bind(h)
+            .execute(&mut **tx)
+            .await?;
+        }
+        "hos_vote" if d["success"].as_bool() == Some(true) => {
+            sqlx::query("UPDATE hos_mandates SET cast_vote = $1, height = $2 WHERE hos_proposal_id = $3")
+                .bind(s(d, "vote"))
+                .bind(h)
+                .bind(i(d, "hos_proposal_id") as i32)
+                .execute(&mut **tx)
+                .await?;
         }
         _ => {} // Stored in `events` only.
     }

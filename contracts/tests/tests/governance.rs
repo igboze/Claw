@@ -64,7 +64,7 @@ async fn deploy() -> anyhow::Result<Dao> {
         "params": {"min_months": 1, "max_months": 24, "min_lock_amount": "1", "max_power_per_account": U128(SUPPLY)},
     })).transact().await?.into_result()?;
     gov.call("new").args_json(json!({
-        "ve_id": ve.id(), "constitution_id": constitution.id(), "proposal_bond": "1000", "tiers": tiers(),
+        "ve_id": ve.id(), "constitution_id": constitution.id(), "agent_id": agent.id(), "hos_voting_period_ns": "60000000000", "proposal_bond": "1000", "tiers": tiers(),
     })).transact().await?.into_result()?;
     constitution.call("new").args_json(json!({
         "governor_id": gov.id(), "agent_id": agent.id(),

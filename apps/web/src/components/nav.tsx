@@ -12,6 +12,7 @@ const LINKS = [
   ["/missions", "Missions"],
   ["/proposals", "Proposals"],
   ["/lock", "Lock"],
+  ["/hos", "House of Stake"],
   ["/agent", "Agent"],
   ["/bounties", "Bounties"],
 ] as const;

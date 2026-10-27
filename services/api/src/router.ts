@@ -2,7 +2,7 @@ import { initTRPC } from "@trpc/server";
 import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  agentWorkers, blocksCursor, bountySubmissions, constitutionVersions, missions, proposals,
+  agentWorkers, blocksCursor, bountySubmissions, constitutionVersions, hosMandates, hosProposals, missions, proposals,
   receipts, treasurySnapshots, veLocks, votes, type Db,
 } from "@clawdao/db";
 import type { ClawViews } from "@clawdao/near";
@@ -116,6 +116,41 @@ export const appRouter = t.router({
       ctx.db.select().from(agentWorkers),
     ]);
     return { info, measurements, workers };
+  }),
+
+  hos: t.router({
+    /** HoS proposals with clawdao's mandate, what was cast, and the clawdao vote that decided it. */
+    proposals: t.procedure.input(z.object({ limit: z.number().int().min(1).max(100).default(30) })).query(async ({ ctx, input }) => {
+      const rows = await ctx.db
+        .select({ p: hosProposals, m: hosMandates })
+        .from(hosProposals)
+        .leftJoin(hosMandates, eq(hosMandates.hosProposalId, hosProposals.id))
+        .orderBy(desc(hosProposals.id))
+        .limit(input.limit);
+      const claw = await ctx.db
+        .select({ id: proposals.id, status: proposals.status, kindPayload: proposals.kindPayload, endsAt: proposals.endsAt })
+        .from(proposals)
+        .where(eq(proposals.kind, "HosVote"));
+      return rows.map(({ p, m }) => ({
+        ...p,
+        mandate: m,
+        clawdaoVotes: claw.filter((c) => (c.kindPayload as { HosVote?: { hos_proposal_id: number } }).HosVote?.hos_proposal_id === p.id),
+      }));
+    }),
+    /** Live treasury position from chain. */
+    position: t.procedure.query(async ({ ctx }) => {
+      const info = await ctx.views.hosInfo();
+      const venear = info.config
+        ? await ctx.views.rpc.view<string>(info.config.venear_id, "ft_balance_of", { account_id: ctx.views.accounts.agent }).catch(() => "0")
+        : "0";
+      const lockupBalance = info.lockup_account_id
+        ? await ctx.views.rpc.view<string>(info.lockup_account_id, "get_balance").catch(() => null)
+        : null;
+      const stakingPool = info.lockup_account_id
+        ? await ctx.views.rpc.view<string | null>(info.lockup_account_id, "get_staking_pool_account_id").catch(() => null)
+        : null;
+      return { ...info, venear, lockupBalance, stakingPool };
+    }),
   }),
 
   bounties: t.procedure.input(z.object({ missionId: z.string() })).query(({ ctx, input }) =>

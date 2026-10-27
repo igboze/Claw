@@ -55,6 +55,11 @@ New agent images, contract upgrades, and guardrail changes are Tier 1 decisions.
 proposal to approve an image must cite the Git tag and the image SHA256 from the
 release notes.
 
+### house-of-stake — House of Stake participation
+The treasury may hold veNEAR in House of Stake. How that veNEAR votes on any House of Stake
+proposal is decided only by CLAW holders through a HosVote proposal; the agent never chooses a
+House of Stake vote on its own.
+
 ## Tier 2 — Operations (60%, 7-day timelock)
 
 ### loop — Operating loop

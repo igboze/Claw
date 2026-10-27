@@ -11,6 +11,7 @@ import { summarizeProposals } from "./tasks/summaries.js";
 import { checkPins } from "./tasks/pins.js";
 import { queueClosingVotes } from "./tasks/closing.js";
 import { pullSocialMetrics } from "./tasks/social.js";
+import { relayHosVotes, snapshotHosPosition, syncHosProposals } from "./tasks/hos.js";
 
 const connection = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null });
 const { db } = createDb();
@@ -25,6 +26,9 @@ const tasks: Record<string, { every: number; run: (d: typeof deps) => Promise<un
   "ipfs-pin-check": { every: 30 * 60_000, run: checkPins },
   "votes-closing": { every: 15 * 60_000, run: queueClosingVotes },
   "social-metrics": { every: 60 * 60_000, run: pullSocialMetrics },
+  "hos-sync": { every: 10 * 60_000, run: syncHosProposals },
+  "hos-relay": { every: 10 * 60_000, run: relayHosVotes },
+  "hos-position": { every: 60 * 60_000, run: snapshotHosPosition },
 };
 
 const queue = new Queue("jobs", { connection });

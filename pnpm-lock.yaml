@@ -216,6 +216,9 @@ importers:
       ioredis:
         specifier: ^5.4.2
         version: 5.11.1
+      near-api-js:
+        specifier: ^5.0.1
+        version: 5.1.1
 
   services/notifier:
     dependencies:

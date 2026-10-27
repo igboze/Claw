@@ -12,6 +12,15 @@
 //!
 //! Tier 0 can never be proposed. `FunctionCall` (upgrades, code hashes, guardrails,
 //! governor settings) is Tier 1 only, so the strictest rules guard the most power.
+//!
+//! House of Stake:
+//! - `HosManage` (Tier 2) runs one of the agent contract's lock / unlock / stake methods
+//!   on the treasury's veNEAR lockup.
+//! - `HosVote` (Tier 3) asks CLAW holders how the treasury's veNEAR should vote on one HoS
+//!   proposal. It uses Tier 3 quorum, its own short voting period and no timelock (HoS lets
+//!   a vote change while voting is open). If quorum is met, the option with the most power
+//!   becomes the mandate (any tie for first becomes Abstain) and execution records it on the
+//!   agent contract.
 
 use clawdao_common::{emit_event, Tier, TIER_CONSTITUTION, TIER_MISSIONS, TIER_PARAMS};
 use near_sdk::json_types::{Base64VecU8, U128, U64};
@@ -26,6 +35,7 @@ const GAS_POWER_AT: Gas = Gas::from_tgas(10);
 const GAS_ON_POWER: Gas = Gas::from_tgas(15);
 const GAS_CONSTITUTION_CALL: Gas = Gas::from_tgas(30);
 const GAS_ON_EXECUTED: Gas = Gas::from_tgas(10);
+const GAS_HOS_MANAGE: Gas = Gas::from_tgas(250);
 const MAX_TITLE: usize = 200;
 const MAX_ACTIONS: usize = 8;
 
@@ -70,7 +80,14 @@ pub enum ProposalKind {
     CancelMission { mission_id: String },
     /// Arbitrary calls on any account, including this governor — Tier 1 only.
     FunctionCall { receiver_id: AccountId, actions: Vec<ActionCall> },
+    /// Treasury veNEAR lockup management on the agent contract — Tier 2.
+    HosManage { method: String, args_json: String },
+    /// How the treasury's veNEAR votes on House of Stake proposal `hos_proposal_id` — Tier 3.
+    HosVote { hos_proposal_id: u32 },
 }
+
+/// Agent contract methods a `HosManage` proposal may call.
+pub const HOS_MANAGE_METHODS: [&str; 5] = ["hos_lock", "hos_begin_unlock", "hos_end_unlock", "hos_withdraw", "hos_staking"];
 
 #[near(serializers = [borsh, json])]
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -111,6 +128,8 @@ pub struct Proposal {
     pub votes_against: U128,
     pub votes_abstain: U128,
     pub status: Status,
+    /// For `HosVote`: the winning option, set at finalize.
+    pub outcome: Option<Choice>,
 }
 
 #[near(serializers = [borsh, json])]
@@ -126,6 +145,8 @@ pub enum VoteRecord {
 pub struct Config {
     pub ve_id: AccountId,
     pub constitution_id: AccountId,
+    pub agent_id: AccountId,
+    pub hos_voting_period_ns: U64,
     pub proposal_bond: U128,
     pub tiers: Vec<(Tier, TierConfig)>,
 }
@@ -143,6 +164,8 @@ enum StorageKey {
 pub struct Contract {
     ve_id: AccountId,
     constitution_id: AccountId,
+    agent_id: AccountId,
+    hos_voting_period_ns: u64,
     proposal_bond: u128,
     tiers: IterableMap<Tier, TierConfig>,
     proposals: IterableMap<u64, Proposal>,
@@ -156,12 +179,16 @@ impl Contract {
     pub fn new(
         ve_id: AccountId,
         constitution_id: AccountId,
+        agent_id: AccountId,
+        hos_voting_period_ns: U64,
         proposal_bond: U128,
         tiers: Vec<(Tier, TierConfig)>,
     ) -> Self {
         let mut this = Self {
             ve_id,
             constitution_id,
+            agent_id,
+            hos_voting_period_ns: hos_voting_period_ns.0,
             proposal_bond: proposal_bond.0,
             tiers: IterableMap::new(StorageKey::Tiers),
             proposals: IterableMap::new(StorageKey::Proposals),
@@ -185,6 +212,7 @@ impl Contract {
         let cfg = self.tiers.get(&tier).cloned().expect("Tier cannot be proposed");
         validate_kind(tier, &kind);
         let now = env::block_timestamp();
+        let period = if matches!(kind, ProposalKind::HosVote { .. }) { self.hos_voting_period_ns } else { cfg.voting_period_ns.0 };
         let id = self.next_id;
         self.next_id += 1;
         let proposal = Proposal {
@@ -196,12 +224,13 @@ impl Contract {
             body_uri,
             bond: U128(env::attached_deposit().as_yoctonear()),
             snapshot_ts: U64(now),
-            ends_at: U64(now + cfg.voting_period_ns.0),
+            ends_at: U64(now + period),
             eta: None,
             votes_for: U128(0),
             votes_against: U128(0),
             votes_abstain: U128(0),
             status: Status::Active,
+            outcome: None,
         };
         emit_event("proposal_created", &proposal);
         self.proposals.insert(id, proposal);
@@ -256,11 +285,14 @@ impl Contract {
         require!(p.status == Status::Active, "Proposal not active");
         require!(now >= p.ends_at.0, "Voting still open");
         let cfg = self.tiers.get(&p.tier).cloned().expect("Tier missing");
-        let passed = tally_passes(&p, &cfg);
+        let is_hos_vote = matches!(p.kind, ProposalKind::HosVote { .. });
+        let outcome = if is_hos_vote { hos_outcome(&p, &cfg) } else { None };
+        let passed = if is_hos_vote { outcome.is_some() } else { tally_passes(&p, &cfg) };
         let p = self.proposals.get_mut(&proposal_id).unwrap();
+        p.outcome = outcome;
         if passed {
             p.status = Status::Queued;
-            p.eta = Some(U64(now + cfg.timelock_ns.0));
+            p.eta = Some(U64(if is_hos_vote { now } else { now + cfg.timelock_ns.0 }));
         } else {
             p.status = Status::Defeated;
         }
@@ -270,7 +302,7 @@ impl Contract {
         }
         let status = p.status;
         emit_event("proposal_finalized", &serde_json::json!({
-            "proposal_id": proposal_id, "status": status, "eta": p.eta,
+            "proposal_id": proposal_id, "status": status, "eta": p.eta, "outcome": p.outcome,
             "votes_for": p.votes_for, "votes_against": p.votes_against, "votes_abstain": p.votes_abstain,
         }));
         status
@@ -304,6 +336,13 @@ impl Contract {
     }
 
     #[private]
+    pub fn set_hos_voting_period(&mut self, period_ns: U64) {
+        require!(period_ns.0 >= clawdao_common::DAY_NS, "HoS votes need at least a day");
+        self.hos_voting_period_ns = period_ns.0;
+        emit_event("governor_hos_period", &serde_json::json!({"period_ns": period_ns}));
+    }
+
+    #[private]
     pub fn set_proposal_bond(&mut self, bond: U128) {
         self.proposal_bond = bond.0;
         emit_event("governor_bond", &serde_json::json!({"bond": bond}));
@@ -329,6 +368,8 @@ impl Contract {
         Config {
             ve_id: self.ve_id.clone(),
             constitution_id: self.constitution_id.clone(),
+            agent_id: self.agent_id.clone(),
+            hos_voting_period_ns: U64(self.hos_voting_period_ns),
             proposal_bond: U128(self.proposal_bond),
             tiers: self.tiers.iter().map(|(t, c)| (*t, c.clone())).collect(),
         }
@@ -376,6 +417,22 @@ impl Contract {
             ProposalKind::CancelMission { mission_id } => {
                 call("cancel_mission", serde_json::json!({"mission_id": mission_id}).to_string())
             }
+            ProposalKind::HosManage { method, args_json } => Promise::new(self.agent_id.clone()).function_call(
+                method.clone(),
+                args_json.clone().into_bytes(),
+                NearToken::from_yoctonear(0),
+                GAS_HOS_MANAGE,
+            ),
+            ProposalKind::HosVote { hos_proposal_id } => Promise::new(self.agent_id.clone()).function_call(
+                "hos_set_mandate".to_string(),
+                serde_json::json!({
+                    "proposal_id": hos_proposal_id, "vote": p.outcome.expect("No outcome"), "clawdao_proposal_id": p.id,
+                })
+                .to_string()
+                .into_bytes(),
+                NearToken::from_yoctonear(0),
+                GAS_CONSTITUTION_CALL,
+            ),
             ProposalKind::FunctionCall { receiver_id, actions } => {
                 let mut promise = Promise::new(receiver_id.clone());
                 for a in actions {
@@ -410,8 +467,27 @@ pub fn validate_kind(tier: Tier, kind: &ProposalKind) {
         ProposalKind::FunctionCall { actions, .. } => {
             tier == TIER_CONSTITUTION && !actions.is_empty() && actions.len() <= MAX_ACTIONS
         }
+        ProposalKind::HosManage { method, args_json } => {
+            tier == TIER_PARAMS && HOS_MANAGE_METHODS.contains(&method.as_str()) && is_json_object(args_json)
+        }
+        ProposalKind::HosVote { .. } => tier == TIER_MISSIONS,
     };
     require!(ok, "Proposal kind not allowed for this tier");
+}
+
+/// Plurality with quorum for `HosVote`. None = quorum missed, so nothing is cast.
+pub fn hos_outcome(p: &Proposal, cfg: &TierConfig) -> Option<Choice> {
+    let (f, a, x) = (p.votes_for.0, p.votes_against.0, p.votes_abstain.0);
+    if f + a + x == 0 || f + a + x < cfg.quorum.0 {
+        return None;
+    }
+    Some(if f > a && f > x {
+        Choice::For
+    } else if a > f && a > x {
+        Choice::Against
+    } else {
+        Choice::Abstain
+    })
 }
 
 pub fn tally_passes(p: &Proposal, cfg: &TierConfig) -> bool {
@@ -442,6 +518,8 @@ mod tests {
         let c = Contract::new(
             accounts(0),
             accounts(1),
+            "agent.near".parse().unwrap(),
+            U64(2 * DAY_NS),
             U128(10),
             vec![(1, tier(14, 6_667)), (2, tier(7, 6_000)), (3, tier(2, 5_001))],
         );
@@ -541,5 +619,56 @@ mod tests {
         let id = propose(&mut ctx, &mut c, 3, mission());
         cast(&mut ctx, &mut c, id, accounts(3), Choice::For, 0);
         assert!(c.get_vote(id, accounts(3)).is_none());
+    }
+
+    #[test]
+    fn hos_vote_plurality_no_timelock() {
+        let (mut ctx, mut c) = setup();
+        let id = propose(&mut ctx, &mut c, 3, ProposalKind::HosVote { hos_proposal_id: 42 });
+        assert_eq!(c.get_proposal(id).unwrap().ends_at.0, 1 + 2 * DAY_NS);
+        cast(&mut ctx, &mut c, id, accounts(3), Choice::Against, 70);
+        cast(&mut ctx, &mut c, id, accounts(4), Choice::For, 50);
+        testing_env!(ctx.block_timestamp(1 + 2 * DAY_NS).build());
+        assert_eq!(c.finalize(id), Status::Queued);
+        let p = c.get_proposal(id).unwrap();
+        assert_eq!(p.outcome, Some(Choice::Against));
+        assert_eq!(p.eta.unwrap().0, 1 + 2 * DAY_NS, "no timelock for HoS votes");
+        c.execute(id);
+    }
+
+    #[test]
+    fn hos_vote_tie_is_abstain_and_quorum_required() {
+        let (mut ctx, mut c) = setup();
+        let id = propose(&mut ctx, &mut c, 3, ProposalKind::HosVote { hos_proposal_id: 1 });
+        cast(&mut ctx, &mut c, id, accounts(3), Choice::For, 60);
+        cast(&mut ctx, &mut c, id, accounts(4), Choice::Against, 60);
+        testing_env!(ctx.block_timestamp(1 + 2 * DAY_NS).build());
+        c.finalize(id);
+        assert_eq!(c.get_proposal(id).unwrap().outcome, Some(Choice::Abstain));
+
+        let id2 = propose(&mut ctx, &mut c, 3, ProposalKind::HosVote { hos_proposal_id: 2 });
+        cast(&mut ctx, &mut c, id2, accounts(3), Choice::For, 10);
+        testing_env!(ctx.block_timestamp(1 + 5 * DAY_NS).build());
+        assert_eq!(c.finalize(id2), Status::Defeated);
+    }
+
+    #[test]
+    fn hos_manage_allowed_at_tier_two() {
+        let (mut ctx, mut c) = setup();
+        propose(&mut ctx, &mut c, 2, ProposalKind::HosManage { method: "hos_lock".into(), args_json: r#"{"amount":"1"}"#.into() });
+    }
+
+    #[test]
+    #[should_panic(expected = "not allowed for this tier")]
+    fn hos_manage_rejects_other_methods() {
+        let (mut ctx, mut c) = setup();
+        propose(&mut ctx, &mut c, 2, ProposalKind::HosManage { method: "hos_configure".into(), args_json: "{}".into() });
+    }
+
+    #[test]
+    #[should_panic(expected = "not allowed for this tier")]
+    fn hos_vote_only_tier_three() {
+        let (mut ctx, mut c) = setup();
+        propose(&mut ctx, &mut c, 1, ProposalKind::HosVote { hos_proposal_id: 1 });
     }
 }
