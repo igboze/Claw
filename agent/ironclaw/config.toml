@@ -1,0 +1,22 @@
+# IronClaw settings for the clawdao agent. Copied into the image; part of the code hash.
+# Check key names against the IronClaw release pinned by IRONCLAW_IMAGE.
+
+[llm]
+# NEAR AI private inference. The API key is injected by the Phala/Dstack env, never baked in.
+provider_id = "nearai"
+api_key_env = "NEARAI_API_KEY"
+model = "deepseek-ai/DeepSeek-V3.1"
+temperature = 0.2
+
+[routines]
+enabled = true
+cron_interval_seconds = 60
+max_concurrent = 1
+
+[safety]
+# Outside text (bounty submissions, social replies, web pages) is wrapped as data.
+treat_tool_output_as_untrusted = true
+
+[extensions]
+# Only the clawdao tools. No shell, no arbitrary HTTP, no file system tools.
+allow = ["clawdao"]

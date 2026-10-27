@@ -1,0 +1,97 @@
+# IronClaw extension manifest for clawdao's tools.
+# Check the schema version against the IronClaw release pinned in agent/Dockerfile.
+schema_version = "reborn.extension_manifest.v3"
+id = "clawdao"
+name = "clawdao"
+version = "0.1.0"
+description = "Tools that let the IronClaw agent read its constitution and propose actions. Value moves only through claw-bridge /propose-action; contracts enforce every cap."
+trust = "third_party"
+
+[runtime]
+kind = "wasm"
+
+[[tools]]
+id = "clawdao.constitution_read"
+description = "Read the on-chain constitution and its hash."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/constitution_read.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.mission_status"
+description = "List active missions with budgets."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/mission_status.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.near_view"
+description = "Read-only NEAR contract views."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/near_view.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.swap_quote"
+description = "Swap quote from Ref Finance smart router (read-only)."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/swap_quote.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+  { scheme = "https", host_pattern = "smartrouter.ref.finance" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.pay_bounty"
+description = "Propose a bounty payment; contracts enforce caps."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/pay_bounty.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.post_social"
+description = "Post a public update on X."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/post_social.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+  { scheme = "https", host_pattern = "api.x.com" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.publish_log"
+description = "Publish a reasoning log to IPFS."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/publish_log.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576

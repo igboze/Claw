@@ -1,0 +1,6 @@
+packages:
+  - "apps/*"
+  - "services/*"
+  - "packages/*"
+  - "agent/bridge"
+  - "!services/indexer"

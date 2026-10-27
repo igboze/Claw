@@ -1,0 +1,66 @@
+name: Agent image
+
+# Builds the single agent image and posts its SHA256 so voters can match the code hash
+# in a Tier 1 proposal. On tags, pushes to GHCR and writes the digest into the release.
+
+on:
+  pull_request:
+    paths: ["agent/**", "packages/near/**", "packages/types/**"]
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: write
+
+env:
+  # Upstream IronClaw image, pinned by digest. Update in a PR so the change is reviewed.
+  IRONCLAW_IMAGE: ${{ vars.IRONCLAW_IMAGE }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Refuse unpinned base image
+        run: |
+          echo "$IRONCLAW_IMAGE" | grep -Eq '@sha256:[0-9a-f]{64}$' || { echo "IRONCLAW_IMAGE must be pinned by digest"; exit 1; }
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: agent/Dockerfile
+          build-args: IRONCLAW_IMAGE=${{ env.IRONCLAW_IMAGE }}
+          push: ${{ startsWith(github.ref, 'refs/tags/') }}
+          tags: ghcr.io/${{ github.repository_owner }}/clawdao-agent:${{ github.ref_name }}
+          provenance: false
+          sbom: false
+        env:
+          SOURCE_DATE_EPOCH: 1767225600
+      - name: Comment image hash on PR
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              ...context.repo,
+              issue_number: context.issue.number,
+              body: `Agent image digest: \`${{ steps.build.outputs.digest }}\`\nBase: \`${process.env.IRONCLAW_IMAGE}\``,
+            });
+      - name: Write digest into release notes
+        if: startsWith(github.ref, 'refs/tags/')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ github.ref_name }}" --generate-notes --notes "Agent image: ghcr.io/${{ github.repository_owner }}/clawdao-agent@${{ steps.build.outputs.digest }}
+          Base IronClaw image: ${IRONCLAW_IMAGE}
+          Approve on-chain only if the attested compose hash matches this digest." || \
+          gh release edit "${{ github.ref_name }}" --notes "Agent image digest: ${{ steps.build.outputs.digest }}"

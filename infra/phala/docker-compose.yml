@@ -1,0 +1,47 @@
+# Phala Cloud (Dstack) deployment for one agent worker. Run 2 to 3 of these on different
+# TEE hosts. The CVM's compose hash covers this file, so the attestation proves exactly
+# these images (pinned by digest) and settings are running.
+#
+# Secrets (NEARAI_API_KEY, IPFS_JWT, X credentials, SPONSOR_*) are set as encrypted env
+# in Phala Cloud, never in this file.
+
+services:
+  agent:
+    # Set to the digest from the release notes, e.g. ghcr.io/clawdao/agent@sha256:...
+    image: ${AGENT_IMAGE:?pin the agent image by digest}
+    restart: always
+    environment:
+      NEAR_NETWORK: ${NEAR_NETWORK:-testnet}
+      NEAR_RPC_URL: ${NEAR_RPC_URL}
+      TOKEN_CONTRACT: ${TOKEN_CONTRACT}
+      VE_CONTRACT: ${VE_CONTRACT}
+      GOVERNOR_CONTRACT: ${GOVERNOR_CONTRACT}
+      CONSTITUTION_CONTRACT: ${CONSTITUTION_CONTRACT}
+      AGENT_CONTRACT: ${AGENT_CONTRACT}
+      # IronClaw's own memory DB lives inside this CVM, not the shared app database.
+      DATABASE_URL: postgres://ironclaw:ironclaw@ironclaw-db:5432/ironclaw
+      NEARAI_API_KEY: ${NEARAI_API_KEY}
+      IPFS_API_URL: ${IPFS_API_URL:-https://api.pinata.cloud}
+      IPFS_JWT: ${IPFS_JWT}
+      SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
+      SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
+      EVM_RPC_BASE: ${EVM_RPC_BASE:-}
+    volumes:
+      # Dstack guest agent socket: shade-agent-js uses it for keys and attestation quotes.
+      - /var/run/dstack.sock:/var/run/dstack.sock
+      - ironclaw-data:/data/ironclaw-reborn
+    depends_on: [ironclaw-db]
+
+  ironclaw-db:
+    image: pgvector/pgvector:pg16@sha256:${PGVECTOR_DIGEST:?pin pgvector by digest}
+    restart: always
+    environment:
+      POSTGRES_USER: ironclaw
+      POSTGRES_PASSWORD: ironclaw
+      POSTGRES_DB: ironclaw
+    volumes:
+      - ironclaw-pg:/var/lib/postgresql/data
+
+volumes:
+  ironclaw-data:
+  ironclaw-pg:

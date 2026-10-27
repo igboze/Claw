@@ -1,0 +1,26 @@
+# Threat model
+
+Top risks first, with where each defence lives in the code.
+
+| # | Threat | Defence | Code |
+| --- | --- | --- | --- |
+| 1 | **Governance capture**: a whale buys and locks enough to amend Tier 1 | 66.67% supermajority, ≥7-day (14 at genesis) Tier 1 timelock that config cannot weaken, per-account voting power cap, ve snapshot at proposal creation | `governor::internal_set_tier`, `ve::Params.max_power_per_account`, `ve::power_at` |
+| 2 | **Prompt injection** via bounty submissions or social replies | Outside text is passed as data (skill + config); value moves are capped by `spend_check` regardless of what the model decides; tools validate inputs | `SKILL.md`, `bounty-intake` `untrusted_data`, `constitution::spend_check`, `claw-tool-core` |
+| 3 | **Malicious code hash** approved by proposal | Reproducible builds, image SHA256 in release notes, base image pinned by digest, long Tier 1 timelock for review | `agent-image.yml`, `agent/Dockerfile`, `contracts/build.sh` |
+| 4 | **TEE compromise** | On-chain guardrails still hold (per-action, per-mission, per-day caps); guardian may pause until its expiry block; revoking measurements disables workers immediately | `agent::require_valid_agent`, `agent::pause` |
+| 5 | **Double actions** from multiple workers | One-time `task_id = sha256(mission:epoch)` | `agent::propose_action`, `bridge/src/task.ts` |
+| 6 | **Flash-loan votes** | Only locked CLAW (≥1 month) has power; power read at snapshot | `ve` |
+| 7 | **Stale plan** after governance changes rules | Every action carries the hash it was planned under; stale hashes rejected | `spend_check` |
+| 8 | **Indexer lies or lags** | Chain is the source of truth; rows carry block height; anyone can re-run the indexer from deploy height | `services/indexer`, `api /status` |
+| 9 | **Spoofed bounty payee** | TODO before mainnet: NEP-413 signed submission | `bounty-intake` |
+
+## Assumptions
+
+- NEAR consensus, the MPC network (`v1.signer`), and Intel TDX/Dstack attestation hold.
+- At least one honest reviewer checks each Tier 1 proposal during its timelock.
+- The upstream IronClaw image at the pinned digest is reviewed before approval.
+
+## Out of scope
+
+Price oracle manipulation (no on-chain oracle is used for caps; caps are in asset units),
+social engineering of holders, availability of RPC providers.

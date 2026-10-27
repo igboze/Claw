@@ -1,0 +1,21 @@
+{
+  "name": "@clawdao/jobs",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@clawdao/db": "workspace:*",
+    "@clawdao/near": "workspace:*",
+    "@clawdao/types": "workspace:*",
+    "bullmq": "^5.34.4",
+    "drizzle-orm": "^0.38.3",
+    "ioredis": "^5.4.2"
+  }
+}

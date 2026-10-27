@@ -1,0 +1,31 @@
+# IronClaw WASM tools for clawdao. Build: ./build.sh (target wasm32-wasip2).
+[workspace]
+resolver = "2"
+members = [
+    "core",
+    "constitution_read",
+    "mission_status",
+    "near_view",
+    "swap_quote",
+    "pay_bounty",
+    "post_social",
+    "publish_log",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+
+[workspace.dependencies]
+claw-tool-core = { path = "core" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+wit-bindgen = "0.41.0"
+
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true

@@ -1,0 +1,72 @@
+# Local environment: Postgres, Redis and every off-chain service.
+#   docker compose -f infra/docker-compose.yml up -d postgres redis   # just the stores
+#   docker compose -f infra/docker-compose.yml --profile app up       # everything
+# Contracts run on a NEAR sandbox or testnet; the agent runs in mock-TEE mode via
+# infra/phala/docker-compose.yml with requires_tee=false on the agent contract.
+
+name: clawdao
+
+x-node: &node
+  build:
+    context: ..
+    dockerfile: infra/node.Dockerfile
+  env_file: ../.env
+  environment:
+    DATABASE_URL: postgres://claw:claw@postgres:5432/clawdao
+    REDIS_URL: redis://redis:6379
+  depends_on: [postgres, redis]
+  profiles: [app]
+  restart: unless-stopped
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: claw
+      POSTGRES_PASSWORD: claw
+      POSTGRES_DB: clawdao
+    ports: ["5432:5432"]
+    volumes: [pgdata:/var/lib/postgresql/data]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U claw"]
+      interval: 5s
+
+  redis:
+    image: valkey/valkey:8-alpine
+    ports: ["6379:6379"]
+
+  migrate:
+    <<: *node
+    command: ["pnpm", "--filter", "@clawdao/db", "migrate"]
+    restart: "no"
+
+  indexer:
+    build:
+      context: ../services/indexer
+    env_file: ../.env
+    environment:
+      DATABASE_URL: postgres://claw:claw@postgres:5432/clawdao
+    depends_on: [postgres]
+    profiles: [app]
+    restart: unless-stopped
+
+  api:
+    <<: *node
+    command: ["node", "services/api/dist/index.js"]
+    ports: ["4000:4000"]
+
+  jobs:
+    <<: *node
+    command: ["node", "services/jobs/dist/index.js"]
+
+  notifier:
+    <<: *node
+    command: ["node", "services/notifier/dist/index.js"]
+
+  bounty-intake:
+    <<: *node
+    command: ["node", "services/bounty-intake/dist/index.js"]
+    ports: ["4100:4100"]
+
+volumes:
+  pgdata:

@@ -1,0 +1,23 @@
+{
+  "name": "@clawdao/claw-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@clawdao/near": "workspace:*",
+    "@clawdao/types": "workspace:*",
+    "@neardefi/shade-agent-js": "2.2.0",
+    "chainsig.js": "1.1.16",
+    "viem": "^2.21.0",
+    "hono": "^4.6.14",
+    "@hono/node-server": "^1.13.7",
+    "zod": "^3.24.1"
+  }
+}

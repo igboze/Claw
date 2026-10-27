@@ -1,0 +1,35 @@
+name: Deploy testnet services
+
+# Off-chain services and web only. Contracts deploy once with infra/scripts/deploy-testnet.sh;
+# after that, contract and agent changes go through governance, never CI. Mainnet deploys
+# happen only through a DAO proposal.
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: testnet   # secrets live in the GitHub Environment, never in the repo
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile && pnpm build
+      - name: Apply migrations
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: pnpm db:migrate
+      - name: Deploy services to Railway
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          npm i -g @railway/cli
+          for s in api jobs notifier bounty-intake indexer; do railway up --service "$s" --detach; done

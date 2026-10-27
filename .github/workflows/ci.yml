@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          targets: wasm32-unknown-unknown
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: contracts
+      - name: Unit tests
+        working-directory: contracts
+        run: cargo test
+      - name: Clippy
+        working-directory: contracts
+        run: cargo clippy --all-targets -- -D warnings
+      - name: Install cargo-near
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+      - name: Build wasm (non-reproducible, for sandbox tests)
+        working-directory: contracts
+        run: for c in token ve governor constitution agent; do (cd $c && cargo near build non-reproducible-wasm); done
+      - name: Integration tests (near-workspaces sandbox)
+        working-directory: contracts
+        run: cargo test -p clawdao-integration-tests -- --ignored --test-threads 1
+
+  reproducible:
+    # cargo near reproducible builds run in the pinned Docker image from each Cargo.toml.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install cargo-near
+        run: curl --proto '=https' --tlsv1.2 -LsSf https://github.com/near/cargo-near/releases/latest/download/cargo-near-installer.sh | sh
+      - name: Reproducible builds
+        run: ./contracts/build.sh | tee wasm-sha256.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: contract-wasm
+          path: |
+            contracts/target/near/**/*.wasm
+            wasm-sha256.txt
+
+  agent-tools:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.93.0
+        with:
+          targets: wasm32-wasip2
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: agent/tools
+      - working-directory: agent/tools
+        run: cargo test -p claw-tool-core && cargo build --release --target wasm32-wasip2
+
+  indexer:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.96.0
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: services/indexer
+      - working-directory: services/indexer
+        run: cargo test
+
+  typescript:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: claw
+          POSTGRES_PASSWORD: claw
+          POSTGRES_DB: clawdao
+        ports: ["5432:5432"]
+        options: --health-cmd "pg_isready -U claw" --health-interval 5s
+    env:
+      DATABASE_URL: postgres://claw:claw@localhost:5432/clawdao
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - run: pnpm typecheck
+      - run: pnpm test
+      - name: Migrations apply cleanly
+        run: pnpm db:migrate

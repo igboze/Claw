@@ -1,0 +1,13 @@
+[package]
+name = "clawdao-integration-tests"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+
+[dev-dependencies]
+near-workspaces = { version = "0.24", features = ["unstable"] }
+near-sdk = { workspace = true }
+tokio = { version = "1", features = ["full"] }
+serde_json.workspace = true
+anyhow = "1"
