@@ -3,26 +3,37 @@
 import Link from "next/link";
 import { useState } from "react";
 import { NearRpc } from "@clawdao/near";
-import type { ProposalKind, Tier } from "@clawdao/types";
+import { FEE_MODES, type FeeMode, type ProposalKind, type Tier } from "@clawdao/types";
+import { useSearchParams } from "next/navigation";
 import { CONTRACTS, NETWORK, TIER_NAMES } from "@/lib/config";
 import { toRaw } from "@/lib/format";
 import { useWallet } from "@/lib/wallet";
 import { Button, Card, CardTitle, Input } from "@/components/ui";
 
 const rpc = new NearRpc(`https://rpc.${NETWORK}.near.org`);
-type KindName = "SetMission" | "CancelMission" | "Amend" | "SetParams" | "FunctionCall";
+type KindName = "SetMission" | "CancelMission" | "Amend" | "SetParams" | "FunctionCall" | "SetFeeMode" | "Allocate" | "HosVote";
 const KINDS_BY_TIER: Record<1 | 2 | 3, KindName[]> = {
   1: ["Amend", "FunctionCall"],
-  2: ["Amend", "SetParams"],
-  3: ["SetMission", "CancelMission"],
+  2: ["Amend", "SetParams", "SetFeeMode", "Allocate"],
+  3: ["SetMission", "CancelMission", "HosVote"],
+};
+const FEE_MODE_LABEL: Record<FeeMode, string> = {
+  StakeHoS: "Stake in House of Stake",
+  HolderRewards: "Rewards to locked-CLAW holders",
+  Buyback: "Buy back and burn CLAW",
 };
 
 const field = "space-y-1 text-sm";
 
 export function ProposalForm() {
   const { accountId, call } = useWallet();
-  const [tier, setTier] = useState<1 | 2 | 3>(3);
-  const [kind, setKind] = useState<KindName>("SetMission");
+  const preset = useSearchParams().get("kind") as KindName | null;
+  const presetTier = preset ? (Number(Object.entries(KINDS_BY_TIER).find(([, ks]) => ks.includes(preset))?.[0] ?? 3) as 1 | 2 | 3) : 3;
+  const [tier, setTier] = useState<1 | 2 | 3>(presetTier);
+  const [kind, setKind] = useState<KindName>(preset ?? "SetMission");
+  const [feeMode, setFeeMode] = useState<FeeMode>("StakeHoS");
+  const [allocAmount, setAllocAmount] = useState("");
+  const [hosId, setHosId] = useState("");
   const [title, setTitle] = useState("");
   const [bodyUri, setBodyUri] = useState("");
   const [m, setM] = useState({ id: "", title: "", goal: "", asset: "near", budget: "", max: "", deadline: "", metric: "", chainSig: false });
@@ -55,6 +66,12 @@ export function ProposalForm() {
         return { SetParams: { params_json: JSON.stringify(JSON.parse(raw)) } };
       case "FunctionCall":
         return { FunctionCall: JSON.parse(raw) };
+      case "SetFeeMode":
+        return { SetFeeMode: { mode: feeMode } };
+      case "Allocate":
+        return { Allocate: { amount: toRaw(allocAmount), destination: feeMode } };
+      case "HosVote":
+        return { HosVote: { hos_proposal_id: Number(hosId) } };
     }
   };
 
@@ -143,6 +160,37 @@ export function ProposalForm() {
           </div>
         )}
         {kind === "CancelMission" && mi("id", "Mission id")}
+        {(kind === "SetFeeMode" || kind === "Allocate") && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className={field}>
+              <span className="text-muted-foreground">{kind === "SetFeeMode" ? "Send 80% of trading fees to" : "Send treasury NEAR to"}</span>
+              <select className="h-9 w-full rounded-md border border-border bg-background px-2" value={feeMode} onChange={(e) => setFeeMode(e.target.value as FeeMode)}>
+                {FEE_MODES.map((m) => (
+                  <option key={m} value={m}>
+                    {FEE_MODE_LABEL[m]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {kind === "Allocate" && (
+              <label className={field}>
+                <span className="text-muted-foreground">Amount (NEAR) — e.g. staking rewards or marketplace earnings</span>
+                <Input value={allocAmount} onChange={(e) => setAllocAmount(e.target.value)} inputMode="decimal" />
+              </label>
+            )}
+            {kind === "SetFeeMode" && (
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Executes only after CLAW has held a $100k market cap for 3 consecutive days (see the Fees page).
+              </p>
+            )}
+          </div>
+        )}
+        {kind === "HosVote" && (
+          <label className={field}>
+            <span className="text-muted-foreground">House of Stake proposal id (use the House of Stake page to start these)</span>
+            <Input value={hosId} onChange={(e) => setHosId(e.target.value)} inputMode="numeric" />
+          </label>
+        )}
         {(kind === "Amend" || kind === "SetParams" || kind === "FunctionCall") && (
           <label className={field}>
             <span className="text-muted-foreground">

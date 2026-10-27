@@ -28,3 +28,8 @@ into Tier 0 at launch.
 - [ ] Admin keys deleted; deletion transactions linked in the docs
 - [ ] Confirm with NEAR AI whether NEAR AI Cloud attestation works with the Shade agent contract
 - [ ] Bounty submissions require a NEP-413 signature from the payee account
+- [ ] Rhea/Ref swap message and fee-on-transfer sells verified on testnet; trade page quotes with `net_of_fee`
+- [ ] CLAW whitelisted on Rhea/Ref; CLAW/wNEAR pool created; `launch_set_pools` called on the fee router
+- [ ] Fee router registered on wNEAR and Rhea (`setup`); keeper relayer funded with gas
+- [ ] Legal opinion covers the 2% fee, the 20% dev share and holder rewards
+- [ ] Confirm the treasury's contract-owned lockup earns HSP-003 veNEAR rewards

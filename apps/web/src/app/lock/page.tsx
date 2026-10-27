@@ -25,6 +25,11 @@ export default function LockPage() {
     () => (accountId ? rpc.view<string>(CONTRACTS.token, "ft_balance_of", { account_id: accountId }) : Promise.resolve("0")),
     [accountId],
   );
+  const rewards = useQuery(
+    () => (accountId ? api.fees.rewards.query({ account: accountId }) : Promise.resolve(null)),
+    [accountId],
+    60_000,
+  );
   const [amount, setAmount] = useState("");
   const [months, setMonths] = useState(12);
   const [msg, setMsg] = useState<string>();
@@ -64,6 +69,23 @@ export default function LockPage() {
         </div>
       )}
       <State loading={!!accountId && lock.loading} error={lock.error} />
+
+      {accountId && rewards.data && (
+        <Card className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <CardTitle className="mb-1">Holder rewards</CardTitle>
+            <p className="text-sm">
+              <span className="text-xl font-semibold tabular-nums">{formatAmount(rewards.data.pending, 24, 4)}</span> NEAR to claim
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Paid to locked CLAW, pro-rata by amount, when holders vote fees or treasury NEAR to holder rewards.
+            </p>
+          </div>
+          <Button disabled={BigInt(rewards.data.pending) === 0n} onClick={() => run(CONTRACTS.ve, "claim_rewards", {}, "0").then(() => rewards.reload())}>
+            Claim
+          </Button>
+        </Card>
+      )}
 
       {accountId && (
         <div className="grid gap-6 md:grid-cols-2">

@@ -9,6 +9,12 @@
 //!   relay it with `hos_vote`, supplying the merkle proof from the HoS snapshot. The
 //!   voting contract verifies the proof, so a relayer can neither forge nor change a vote.
 //!
+//! - Trading fees: the fee router calls `hos_lock_fees` with 80% of fee revenue attached;
+//!   it is locked straight away (no cap; the policy is the point).
+//! - Allocation: `treasury_allocate` (Tier 2 `Allocate`) sends treasury NEAR — staking
+//!   rewards withdrawn from the lockup, agent marketplace earnings — where holders voted:
+//!   lock in HoS, pay locked-CLAW holders, or buy back and burn CLAW.
+//!
 //! Interfaces follow houseofstake/house-of-stake-contracts (venear.dao / vote.dao on mainnet).
 
 use crate::*;
@@ -80,13 +86,35 @@ pub enum HosStakingCall {
     RefreshStakingPoolBalance,
 }
 
+/// Where holders can send treasury NEAR.
+#[near(serializers = [json])]
+#[derive(Clone, Copy, Debug)]
+pub enum Allocation {
+    /// Lock in House of Stake (counts against `max_locked`).
+    StakeHoS,
+    /// Pay locked-CLAW holders through the ve contract.
+    HolderRewards,
+    /// Buy back and burn CLAW through the fee router.
+    Buyback,
+}
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct TreasuryLinks {
+    pub fee_router_id: AccountId,
+    pub ve_id: AccountId,
+}
+
 #[derive(Serialize)]
 #[serde(crate = "near_sdk::serde")]
 pub struct HosInfo {
     pub config: Option<HosConfig>,
     pub lockup_account_id: Option<AccountId>,
-    /// NEAR this contract has locked (tracked here; the lockup is the source of truth).
+    /// Treasury NEAR this contract has locked (tracked here; the lockup is the source of truth).
     pub locked: U128,
+    /// NEAR locked from trading fees.
+    pub locked_from_fees: U128,
+    pub links: Option<TreasuryLinks>,
 }
 
 #[near(serializers = [borsh])]
@@ -94,6 +122,8 @@ pub struct HosState {
     pub config: Option<HosConfig>,
     pub locked: u128,
     pub mandates: LookupMap<HosProposalId, HosMandate>,
+    pub locked_from_fees: u128,
+    pub links: Option<TreasuryLinks>,
 }
 
 impl Default for HosState {
@@ -104,7 +134,7 @@ impl Default for HosState {
 
 impl HosState {
     pub fn new() -> Self {
-        Self { config: None, locked: 0, mandates: LookupMap::new(StorageKey::HosMandates) }
+        Self { config: None, locked: 0, mandates: LookupMap::new(StorageKey::HosMandates), locked_from_fees: 0, links: None }
     }
 }
 
@@ -151,6 +181,61 @@ impl Contract {
             NearToken::from_yoctonear(storage_deposit.0.max(1)),
             GAS_SET_DELEGATIONS,
         )
+    }
+
+    /// Tier 1: the fee router and ve contract this treasury pays into.
+    pub fn set_treasury_links(&mut self, links: TreasuryLinks) {
+        self.only_governor();
+        emit_event("treasury_links", &links);
+        self.hos.links = Some(links);
+    }
+
+    // ---- fee router ----
+
+    /// 80% of trading-fee revenue arrives here and is locked in House of Stake.
+    #[payable]
+    pub fn hos_lock_fees(&mut self) -> Promise {
+        let links = self.hos.links.clone().expect("Treasury links not set");
+        assert_caller(&links.fee_router_id, "the fee router");
+        let amount = env::attached_deposit().as_yoctonear();
+        require!(amount > 0, "Attach NEAR");
+        self.hos.locked_from_fees += amount;
+        emit_event("hos_lock_fees", &serde_json::json!({
+            "amount": U128(amount), "total_from_fees": U128(self.hos.locked_from_fees),
+        }));
+        let lockup = self.hos_lockup();
+        Promise::new(lockup.clone()).transfer(NearToken::from_yoctonear(amount)).then(self.lockup_call(
+            &lockup,
+            "lock_near",
+            serde_json::json!({ "amount": U128(amount) }),
+            GAS_LOCKUP_SIMPLE,
+        ))
+    }
+
+    // ---- Tier 2 (Allocate) ----
+
+    /// Send treasury NEAR where holders voted. Staking rewards reach the treasury through
+    /// `hos_withdraw`; marketplace earnings arrive as NEAR once converted.
+    pub fn treasury_allocate(&mut self, amount: U128, destination: Allocation) -> Promise {
+        self.only_governor();
+        require!(amount.0 > 0, "Zero amount");
+        let links = self.hos.links.clone().expect("Treasury links not set");
+        emit_event("treasury_allocated", &serde_json::json!({ "amount": amount, "destination": destination }));
+        match destination {
+            Allocation::StakeHoS => self.hos_lock(amount),
+            Allocation::HolderRewards => Promise::new(links.ve_id).function_call(
+                "deposit_rewards".to_string(),
+                b"{}".to_vec(),
+                NearToken::from_yoctonear(amount.0),
+                GAS_SET_DELEGATIONS,
+            ),
+            Allocation::Buyback => Promise::new(links.fee_router_id).function_call(
+                "deposit_buyback".to_string(),
+                b"{}".to_vec(),
+                NearToken::from_yoctonear(amount.0),
+                GAS_SET_DELEGATIONS,
+            ),
+        }
     }
 
     // ---- Tier 2 (HosManage) ----
@@ -273,6 +358,8 @@ impl Contract {
             config: self.hos.config.clone(),
             lockup_account_id: self.hos.config.as_ref().map(|c| lockup_account_id(&env::current_account_id(), &c.venear_id)),
             locked: U128(self.hos.locked),
+            locked_from_fees: U128(self.hos.locked_from_fees),
+            links: self.hos.links.clone(),
         }
     }
 
@@ -363,6 +450,53 @@ mod tests {
         let mut c = setup(&mut ctx);
         testing_env!(ctx.predecessor_account_id(accounts(3)).build());
         c.hos_set_mandate(7, HosVoteOption::For, 1);
+    }
+
+    fn link(c: &mut Contract) {
+        c.set_treasury_links(TreasuryLinks { fee_router_id: "fees.claw.near".parse().unwrap(), ve_id: "ve.claw.near".parse().unwrap() });
+    }
+
+    #[test]
+    fn fee_router_locks_uncapped() {
+        let mut ctx = VMContextBuilder::new();
+        let mut c = setup(&mut ctx);
+        link(&mut c);
+        testing_env!(ctx.predecessor_account_id("fees.claw.near".parse().unwrap()).attached_deposit(NearToken::from_near(500)).build());
+        c.hos_lock_fees();
+        let info = c.hos_info();
+        assert_eq!(info.locked_from_fees.0, 500 * NEAR);
+        assert_eq!(info.locked.0, 0, "fee locks do not use the treasury cap");
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the fee router")]
+    fn only_fee_router_locks_fees() {
+        let mut ctx = VMContextBuilder::new();
+        let mut c = setup(&mut ctx);
+        link(&mut c);
+        testing_env!(ctx.predecessor_account_id(accounts(3)).attached_deposit(NearToken::from_near(1)).build());
+        c.hos_lock_fees();
+    }
+
+    #[test]
+    fn allocate_routes_by_vote() {
+        let mut ctx = VMContextBuilder::new();
+        let mut c = setup(&mut ctx);
+        link(&mut c);
+        c.treasury_allocate(U128(NEAR), Allocation::HolderRewards);
+        c.treasury_allocate(U128(NEAR), Allocation::Buyback);
+        c.treasury_allocate(U128(10 * NEAR), Allocation::StakeHoS);
+        assert_eq!(c.hos_info().locked.0, 10 * NEAR);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the Governor")]
+    fn allocate_governor_only() {
+        let mut ctx = VMContextBuilder::new();
+        let mut c = setup(&mut ctx);
+        link(&mut c);
+        testing_env!(ctx.predecessor_account_id(accounts(3)).build());
+        c.treasury_allocate(U128(1), Allocation::Buyback);
     }
 
     #[test]

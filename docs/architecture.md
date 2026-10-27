@@ -25,11 +25,12 @@ rebuilt by anyone from the chain.
 
 | Crate | Account | Job | Changed by |
 | --- | --- | --- | --- |
-| `token` | `claw.near` | NEP-141 + NEP-145, fixed supply minted once in `new`, no mint method | Nobody (keys deleted) |
+| `token` | `claw.near` | NEP-141 + NEP-145, fixed supply, no mint; 2% fee on DEX buys/sells to the fee router; holder burn | DEX list: Governor (Tier 1); everything else nobody |
 | `ve` | `ve.claw.near` | Lock 1–24 months via `ft_transfer_call`; power = amount × remaining / 24 mo; checkpoints for `power_at(ts)`; per-account power cap | Governor (Tier 1) |
 | `governor` | `gov.claw.near` | Proposals per tier, ve-weighted votes at snapshot, quorum, threshold, timelock, execution | Itself via Tier 1 `FunctionCall` |
 | `constitution` | `constitution.claw.near` | Tier 0–2 articles, Tier 2 params, Tier 3 missions, Tier 4 receipts, current hash, `spend_check` | Tier 0 nobody; 1–3 Governor; 4 agent contract |
-| `agent` | `agent.claw.near` | Shade agent: Dstack attestation, approved measurements (code hashes), `propose_action`, MPC signing, guardian pause, treasury | Governor (Tier 1) |
+| `agent` | `agent.claw.near` | Shade agent: Dstack attestation, approved measurements (code hashes), `propose_action`, MPC signing, guardian pause, treasury, House of Stake lockup | Governor (Tier 1) |
+| `fees` | `fees.claw.near` | Fee router: sells the 2% CLAW trading fee for NEAR, 20% dev / 80% by mode (HoS stake, holder rewards, buyback), $100k market-cap gate | Governor (mode: Tier 2 after gate; dev wallet, limits, DEX: Tier 1) |
 
 `common` holds the NEP-297 event helper and tier constants. Every event is
 `EVENT_JSON:{"standard":"clawdao","version":"1.0.0","event":…,"data":[…]}`.
@@ -110,6 +111,11 @@ Next.js App Router, Tailwind, shadcn-style components, NEAR Wallet Selector. Pag
 Constitution (tiers, params, version diff), Missions, Proposals (create, vote, finalize,
 execute, timelock countdown, labelled AI summary), Lock, Agent, Bounties. Detail views use
 query parameters so `pnpm export:ipfs` produces a static mirror for IPFS.
+
+## Fees and tokenomics
+
+See [tokenomics.md](tokenomics.md): the 2% trading fee, the fee router, what House of Stake
+staking earns, holder rewards, and `Allocate` votes.
 
 ## House of Stake
 

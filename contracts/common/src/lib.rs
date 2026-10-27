@@ -44,3 +44,27 @@ pub fn assert_caller(expected: &AccountId, what: &str) {
         env::panic_str(&format!("Only {what} can call this method"));
     }
 }
+
+#[allow(clippy::all)]
+mod u256 {
+    uint::construct_uint! {
+        /// 256-bit integer for overflow-free a * b / c on token amounts.
+        pub struct U256(4);
+    }
+}
+pub use u256::U256;
+
+/// a * b / c without overflow. Panics if c == 0 or the result exceeds u128.
+pub fn mul_div(a: u128, b: u128, c: u128) -> u128 {
+    let r = U256::from(a) * U256::from(b) / U256::from(c);
+    require_u128(r)
+}
+
+fn require_u128(v: U256) -> u128 {
+    if v > U256::from(u128::MAX) {
+        env::panic_str("mul_div overflow");
+    }
+    v.as_u128()
+}
+
+pub const NEAR_ONE: u128 = 1_000_000_000_000_000_000_000_000;

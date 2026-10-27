@@ -12,6 +12,7 @@ import { checkPins } from "./tasks/pins.js";
 import { queueClosingVotes } from "./tasks/closing.js";
 import { pullSocialMetrics } from "./tasks/social.js";
 import { relayHosVotes, snapshotHosPosition, syncHosProposals } from "./tasks/hos.js";
+import { observeMarketCap, runFeeRouter } from "./tasks/fees.js";
 
 const connection = new Redis(process.env.REDIS_URL ?? "redis://localhost:6379", { maxRetriesPerRequest: null });
 const { db } = createDb();
@@ -29,6 +30,8 @@ const tasks: Record<string, { every: number; run: (d: typeof deps) => Promise<un
   "hos-sync": { every: 10 * 60_000, run: syncHosProposals },
   "hos-relay": { every: 10 * 60_000, run: relayHosVotes },
   "hos-position": { every: 60 * 60_000, run: snapshotHosPosition },
+  "fee-router": { every: 30 * 60_000, run: runFeeRouter },
+  "market-cap": { every: 6 * 60 * 60_000, run: observeMarketCap },
 };
 
 const queue = new Queue("jobs", { connection });

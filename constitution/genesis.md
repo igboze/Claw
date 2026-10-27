@@ -60,6 +60,17 @@ The treasury may hold veNEAR in House of Stake. How that veNEAR votes on any Hou
 proposal is decided only by CLAW holders through a HosVote proposal; the agent never chooses a
 House of Stake vote on its own.
 
+### trading-fees — Trading fees
+CLAW buys and sells on listed exchanges pay a 2% fee in CLAW, converted to NEAR. Twenty percent
+goes to the dev wallet and eighty percent is staked in House of Stake. Once CLAW has held a
+market capitalisation of at least 100,000 US dollars for three consecutive days, holders may
+vote to send that eighty percent to holder rewards or to buy back and burn CLAW instead.
+
+### allocation — Treasury allocation
+Staking rewards, agent marketplace earnings and other treasury NEAR are spent only where
+holders vote: staking in House of Stake, rewards to locked-CLAW holders, or buyback and burn,
+or through missions.
+
 ## Tier 2 — Operations (60%, 7-day timelock)
 
 ### loop — Operating loop

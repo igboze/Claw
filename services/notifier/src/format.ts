@@ -24,6 +24,12 @@ export function formatEvent(kind: string, d: P, web: string): string | null {
       return `🏛 CLAW holders decided the treasury votes ${str(d.vote)} on House of Stake proposal #${str(d.hos_proposal_id)}. ${web}/hos`;
     case "hos_vote":
       return d.success ? `🏛 Treasury veNEAR vote ${str(d.vote)} cast on House of Stake proposal #${str(d.hos_proposal_id)}.` : null;
+    case "fee_mode_unlocked":
+      return `📈 CLAW held a $100k market cap for 3 days. Holders can now vote on where trading fees go. ${web}/fees`;
+    case "fee_mode_set":
+      return `🗳 Trading fees now go to: ${str(d.mode)}. ${web}/fees`;
+    case "buyback":
+      return Number(d.claw_bought ?? 0) > 0 ? `🔥 Buyback burned ${formatAmount(str(d.claw_bought))} CLAW.` : null;
     case "paused":
       return `⏸ Agent paused by ${str(d.by)}.`;
     default:

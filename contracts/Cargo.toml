@@ -1,9 +1,9 @@
 [workspace]
 resolver = "2"
-members = ["common", "token", "ve", "governor", "constitution", "agent", "tests"]
+members = ["common", "token", "ve", "governor", "constitution", "agent", "fees", "tests"]
 # near-workspaces downloads a sandbox binary (Linux/macOS only), so plain `cargo test`
 # skips the integration crate. Run it with `-p clawdao-integration-tests`.
-default-members = ["common", "token", "ve", "governor", "constitution", "agent"]
+default-members = ["common", "token", "ve", "governor", "constitution", "agent", "fees"]
 
 [workspace.package]
 version = "0.1.0"

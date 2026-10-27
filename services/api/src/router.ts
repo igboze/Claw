@@ -1,8 +1,8 @@
 import { initTRPC } from "@trpc/server";
-import { and, asc, desc, eq, lt, sql } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  agentWorkers, blocksCursor, bountySubmissions, constitutionVersions, hosMandates, hosProposals, missions, proposals,
+  agentWorkers, blocksCursor, bountySubmissions, constitutionVersions, events, hosMandates, hosProposals, missions, proposals,
   receipts, treasurySnapshots, veLocks, votes, type Db,
 } from "@clawdao/db";
 import type { ClawViews } from "@clawdao/near";
@@ -116,6 +116,31 @@ export const appRouter = t.router({
       ctx.db.select().from(agentWorkers),
     ]);
     return { info, measurements, workers };
+  }),
+
+  fees: t.router({
+    /** Live fee router state: mode, market-cap gate, totals routed. */
+    state: t.procedure.query(({ ctx }) => ctx.views.feeState()),
+    /** Recent fee-flow events (distributions, buybacks, mode changes, market-cap checks). */
+    events: t.procedure.input(z.object({ limit: z.number().int().min(1).max(200).default(50) })).query(({ ctx, input }) =>
+      ctx.db
+        .select()
+        .from(events)
+        .where(
+          inArray(events.kind, [
+            "fees_distributed", "buyback", "fee_mode_set", "fee_mode_unlocked", "market_cap_observed",
+            "rewards_deposited", "hos_lock_fees", "treasury_allocated", "dev_wallet_set",
+          ]),
+        )
+        .orderBy(desc(events.height))
+        .limit(input.limit),
+    ),
+    /** Holder rewards: what an account can claim, and totals ever paid in. */
+    rewards: t.procedure.input(z.object({ account: z.string().optional() })).query(async ({ ctx, input }) => {
+      const [total, waiting] = await ctx.views.rewardsInfo();
+      const pending = input.account ? await ctx.views.pendingRewards(input.account) : "0";
+      return { total, waiting, pending };
+    }),
   }),
 
   hos: t.router({

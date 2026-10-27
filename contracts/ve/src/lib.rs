@@ -4,8 +4,12 @@
 //! decays linearly towards the unlock date. Every change to a lock is checkpointed,
 //! so the Governor can read anyone's power at a proposal's snapshot time.
 //! Locking (rather than counting raw balances) stops flash-loan votes.
+//!
+//! Holder rewards: NEAR sent to `deposit_rewards` (trading fees when holders vote for
+//! rewards, staking rewards, agent earnings) is shared pro-rata by locked CLAW amount and
+//! claimed with `claim_rewards`. A standard reward-per-token accumulator keeps it O(1).
 
-use clawdao_common::{assert_caller, emit_event, MONTH_NS};
+use clawdao_common::{assert_caller, emit_event, mul_div, MONTH_NS, U256};
 use near_sdk::json_types::{U128, U64};
 use near_sdk::serde::{Deserialize, Serialize};
 use near_sdk::store::LookupMap;
@@ -65,11 +69,24 @@ pub struct LockView {
     pub power: U128,
 }
 
+/// Accumulator precision.
+const ACC_SCALE: u128 = 1_000_000_000_000_000_000_000_000;
+
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, Default)]
+pub struct RewardAccount {
+    /// acc_reward_per_token * amount / ACC_SCALE at the last settlement.
+    pub debt: U128,
+    /// NEAR earned and not yet claimed.
+    pub owed: U128,
+}
+
 #[near]
 #[derive(BorshStorageKey)]
 enum StorageKey {
     Locks,
     History,
+    Rewards,
 }
 
 #[near(contract_state)]
@@ -81,6 +98,12 @@ pub struct Contract {
     locks: LookupMap<AccountId, Lock>,
     history: LookupMap<AccountId, Vec<Checkpoint>>,
     total_locked: u128,
+    /// NEAR per locked yocto-CLAW, times ACC_SCALE.
+    acc_reward_per_token: u128,
+    rewards: LookupMap<AccountId, RewardAccount>,
+    /// Rewards that arrived while nothing was locked; added to the next deposit.
+    undistributed: u128,
+    total_rewards: u128,
 }
 
 pub fn power_of_lock(amount: u128, unlock_at: u64, ts: u64, params: &Params) -> u128 {
@@ -106,6 +129,10 @@ impl Contract {
             locks: LookupMap::new(StorageKey::Locks),
             history: LookupMap::new(StorageKey::History),
             total_locked: 0,
+            acc_reward_per_token: 0,
+            rewards: LookupMap::new(StorageKey::Rewards),
+            undistributed: 0,
+            total_rewards: 0,
         }
     }
 
@@ -176,6 +203,48 @@ impl Contract {
         }
     }
 
+    /// Anyone can add NEAR rewards for locked-CLAW holders.
+    #[payable]
+    pub fn deposit_rewards(&mut self) {
+        let attached = env::attached_deposit().as_yoctonear();
+        let amount = attached + self.undistributed;
+        require!(amount > 0, "Attach NEAR");
+        self.total_rewards += attached;
+        if self.total_locked == 0 {
+            self.undistributed = amount;
+        } else {
+            self.undistributed = 0;
+            self.acc_reward_per_token += mul_div(amount, ACC_SCALE, self.total_locked);
+        }
+        emit_event("rewards_deposited", &serde_json::json!({
+            "near": U128(attached), "total_locked": U128(self.total_locked),
+        }));
+    }
+
+    pub fn claim_rewards(&mut self) -> Promise {
+        let account = env::predecessor_account_id();
+        let amount = self.locks.get(&account).map(|l| l.amount.0).unwrap_or(0);
+        self.settle(&account, amount);
+        self.reset_debt(&account, amount);
+        let r = self.rewards.get_mut(&account).expect("No rewards");
+        let owed = r.owed.0;
+        require!(owed > 0, "Nothing to claim");
+        r.owed = U128(0);
+        emit_event("rewards_claimed", &serde_json::json!({ "account_id": account, "near": U128(owed) }));
+        Promise::new(account).transfer(NearToken::from_yoctonear(owed))
+    }
+
+    pub fn pending_rewards(&self, account_id: AccountId) -> U128 {
+        let amount = self.locks.get(&account_id).map(|l| l.amount.0).unwrap_or(0);
+        let r = self.rewards.get(&account_id).cloned().unwrap_or_default();
+        U128(r.owed.0 + self.accrued(amount, r.debt.0))
+    }
+
+    /// (total NEAR ever deposited, NEAR waiting for the first locker)
+    pub fn rewards_info(&self) -> (U128, U128) {
+        (U128(self.total_rewards), U128(self.undistributed))
+    }
+
     /// Tier 1: Governor only.
     pub fn set_params(&mut self, params: Params) {
         assert_caller(&self.governor_id, "the Governor");
@@ -224,7 +293,33 @@ impl Contract {
 }
 
 impl Contract {
+    fn gross(&self, amount: u128) -> u128 {
+        (U256::from(amount) * U256::from(self.acc_reward_per_token) / U256::from(ACC_SCALE)).as_u128()
+    }
+
+    fn accrued(&self, amount: u128, debt: u128) -> u128 {
+        self.gross(amount).saturating_sub(debt)
+    }
+
+    /// Credit rewards earned on `amount` (the balance before a change).
+    fn settle(&mut self, account: &AccountId, amount: u128) {
+        let mut r = self.rewards.get(account).cloned().unwrap_or_default();
+        r.owed = U128(r.owed.0 + self.accrued(amount, r.debt.0));
+        self.rewards.insert(account.clone(), r);
+    }
+
+    /// Start accruing from now on `new_amount`.
+    fn reset_debt(&mut self, account: &AccountId, new_amount: u128) {
+        let debt = self.gross(new_amount);
+        if let Some(r) = self.rewards.get_mut(account) {
+            r.debt = U128(debt);
+        }
+    }
+
     fn write_lock(&mut self, account: &AccountId, lock: Lock) {
+        let old = self.locks.get(account).map(|l| l.amount.0).unwrap_or(0);
+        self.settle(account, old);
+        self.reset_debt(account, lock.amount.0);
         let cp = Checkpoint { ts: env::block_timestamp(), amount: lock.amount.0, unlock_at: lock.unlock_at.0 };
         let hist = self.history.entry(account.clone()).or_default();
         match hist.last_mut() {
@@ -304,6 +399,50 @@ mod tests {
         c.ft_on_transfer(accounts(2), U128(10), r#"{"months":3}"#.into());
         testing_env!(ctx.predecessor_account_id(accounts(2)).build());
         c.withdraw();
+    }
+
+    #[test]
+    fn rewards_split_by_locked_amount() {
+        let (mut ctx, mut c) = setup();
+        testing_env!(ctx.predecessor_account_id(accounts(0)).build());
+        c.ft_on_transfer(accounts(2), U128(3_000), r#"{"months":6}"#.into());
+        c.ft_on_transfer(accounts(3), U128(1_000), r#"{"months":24}"#.into());
+        testing_env!(ctx.predecessor_account_id(accounts(4)).attached_deposit(NearToken::from_yoctonear(4_000_000)).build());
+        c.deposit_rewards();
+        assert_eq!(c.pending_rewards(accounts(2)).0, 3_000_000);
+        assert_eq!(c.pending_rewards(accounts(3)).0, 1_000_000);
+        // A later locker does not share earlier rewards.
+        testing_env!(ctx.predecessor_account_id(accounts(0)).attached_deposit(NearToken::from_yoctonear(0)).build());
+        c.ft_on_transfer(accounts(1), U128(4_000), r#"{"months":3}"#.into());
+        assert_eq!(c.pending_rewards(accounts(1)).0, 0);
+        testing_env!(ctx.predecessor_account_id(accounts(4)).attached_deposit(NearToken::from_yoctonear(8_000_000)).build());
+        c.deposit_rewards();
+        assert_eq!(c.pending_rewards(accounts(1)).0, 4_000_000);
+        assert_eq!(c.pending_rewards(accounts(2)).0, 3_000_000 + 3_000_000);
+    }
+
+    #[test]
+    fn claim_pays_and_zeroes() {
+        let (mut ctx, mut c) = setup();
+        testing_env!(ctx.predecessor_account_id(accounts(0)).build());
+        c.ft_on_transfer(accounts(2), U128(1_000), r#"{"months":6}"#.into());
+        testing_env!(ctx.predecessor_account_id(accounts(4)).attached_deposit(NearToken::from_yoctonear(500)).build());
+        c.deposit_rewards();
+        testing_env!(ctx.predecessor_account_id(accounts(2)).attached_deposit(NearToken::from_yoctonear(0)).build());
+        c.claim_rewards();
+        assert_eq!(c.pending_rewards(accounts(2)).0, 0);
+    }
+
+    #[test]
+    fn rewards_with_nothing_locked_wait() {
+        let (mut ctx, mut c) = setup();
+        testing_env!(ctx.predecessor_account_id(accounts(4)).attached_deposit(NearToken::from_yoctonear(900)).build());
+        c.deposit_rewards();
+        testing_env!(ctx.predecessor_account_id(accounts(0)).attached_deposit(NearToken::from_yoctonear(0)).build());
+        c.ft_on_transfer(accounts(2), U128(1_000), r#"{"months":6}"#.into());
+        testing_env!(ctx.predecessor_account_id(accounts(4)).attached_deposit(NearToken::from_yoctonear(100)).build());
+        c.deposit_rewards();
+        assert_eq!(c.pending_rewards(accounts(2)).0, 1_000);
     }
 
     #[test]

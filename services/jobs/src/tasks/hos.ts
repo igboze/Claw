@@ -1,8 +1,8 @@
 import { and, eq, isNull, ne, or } from "drizzle-orm";
-import { connect, KeyPair, keyStores } from "near-api-js";
 import { hosMandates, hosProposals, treasurySnapshots } from "@clawdao/db";
 import { HosViews, NearRpc, type HosProposal } from "@clawdao/near";
 import type { Deps } from "./deps.js";
+import { relayer as getRelayer } from "./relayer.js";
 
 const NETWORK = process.env.NEAR_NETWORK ?? "testnet";
 const VENEAR = process.env.VENEAR_CONTRACT ?? (NETWORK === "mainnet" ? "venear.dao" : "");
@@ -52,9 +52,8 @@ export async function syncHosProposals({ db, views }: Deps) {
 export async function relayHosVotes({ db, views }: Deps) {
   const archival = process.env.ARCHIVAL_RPC_URL ?? views.rpc.url;
   const hos = hosViews(archival);
-  const relayerId = process.env.RELAYER_ACCOUNT_ID;
-  const relayerKey = process.env.RELAYER_PRIVATE_KEY;
-  if (!hos || !relayerId || !relayerKey) return 0;
+  const relayer = await getRelayer(views.rpc.url);
+  if (!hos || !relayer) return 0;
 
   const due = await db
     .select({ m: hosMandates, p: hosProposals })
@@ -62,11 +61,6 @@ export async function relayHosVotes({ db, views }: Deps) {
     .innerJoin(hosProposals, eq(hosProposals.id, hosMandates.hosProposalId))
     .where(and(eq(hosProposals.status, "Voting"), or(isNull(hosMandates.castVote), ne(hosMandates.castVote, hosMandates.vote))));
   if (!due.length) return 0;
-
-  const keyStore = new keyStores.InMemoryKeyStore();
-  await keyStore.setKey(NETWORK, relayerId, KeyPair.fromString(relayerKey as `ed25519:${string}`));
-  const near = await connect({ networkId: NETWORK, nodeUrl: views.rpc.url, keyStore } as unknown as Parameters<typeof connect>[0]);
-  const relayer = await near.account(relayerId);
 
   let sent = 0;
   for (const { m, p } of due) {

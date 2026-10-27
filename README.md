@@ -11,13 +11,15 @@ prompt, or its treasury.
 - **Contract beats prompt.** Guardrails live in contracts, so a jailbreak cannot move more than the caps allow.
 - **One language per layer.** Rust for contracts and agent tools, TypeScript for the API, bridge and web app.
 
-See [docs/architecture.md](docs/architecture.md) for the full design and
+See [docs/architecture.md](docs/architecture.md) for the full design,
+[docs/tokenomics.md](docs/tokenomics.md) for fees and rewards,
+[docs/house-of-stake.md](docs/house-of-stake.md) for House of Stake, and
 [docs/threat-model.md](docs/threat-model.md) for the risks it defends against.
 
 ## Layout
 
 ```
-contracts/      Rust Cargo workspace: token, ve, governor, constitution, agent (+ common, tests)
+contracts/      Rust Cargo workspace: token, ve, governor, constitution, agent, fees (+ common, tests)
 agent/          IronClaw config + skills, custom WASM tools, claw-bridge signer, Dockerfile
 services/       indexer (Rust), api, jobs, notifier, bounty-intake (TypeScript)
 apps/web/       Next.js dApp
@@ -50,7 +52,8 @@ cd contracts && ./build.sh && cargo test -p clawdao-integration-tests -- --ignor
 
 | Contract | Account | Changed by |
 | --- | --- | --- |
-| Token | `claw.near` | Nobody (keys deleted) |
+| Token | `claw.near` | DEX fee list: Governor, Tier 1. Rate (2%) and supply: nobody |
+| Fee router | `fees.claw.near` | Fee mode: Tier 2 after $100k gate. Dev wallet, limits: Tier 1 |
 | Vote escrow | `ve.claw.near` | Governor, Tier 1 |
 | Governor | `gov.claw.near` | Governor, Tier 1 |
 | Constitution | `constitution.claw.near` | Tier 0 nobody; Tiers 1–3 Governor; Tier 4 agent contract |

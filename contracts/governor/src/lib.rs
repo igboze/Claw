@@ -21,6 +21,12 @@
 //!   a vote change while voting is open). If quorum is met, the option with the most power
 //!   becomes the mandate (any tie for first becomes Abstain) and execution records it on the
 //!   agent contract.
+//!
+//! Fees and treasury:
+//! - `SetFeeMode` (Tier 2) picks where 80% of trading fees go: StakeHoS, HolderRewards or
+//!   Buyback. The fee router refuses it until CLAW's market cap has held $100k for 3 days.
+//! - `Allocate` (Tier 2) sends treasury NEAR (staking rewards, marketplace earnings) to
+//!   StakeHoS, HolderRewards or Buyback.
 
 use clawdao_common::{emit_event, Tier, TIER_CONSTITUTION, TIER_MISSIONS, TIER_PARAMS};
 use near_sdk::json_types::{Base64VecU8, U128, U64};
@@ -84,7 +90,14 @@ pub enum ProposalKind {
     HosManage { method: String, args_json: String },
     /// How the treasury's veNEAR votes on House of Stake proposal `hos_proposal_id` — Tier 3.
     HosVote { hos_proposal_id: u32 },
+    /// Trading-fee destination on the fee router — Tier 2.
+    SetFeeMode { mode: String },
+    /// Send treasury NEAR somewhere holders chose — Tier 2.
+    Allocate { amount: U128, destination: String },
 }
+
+/// Valid `SetFeeMode.mode` and `Allocate.destination` values.
+pub const FEE_DESTINATIONS: [&str; 3] = ["StakeHoS", "HolderRewards", "Buyback"];
 
 /// Agent contract methods a `HosManage` proposal may call.
 pub const HOS_MANAGE_METHODS: [&str; 5] = ["hos_lock", "hos_begin_unlock", "hos_end_unlock", "hos_withdraw", "hos_staking"];
@@ -146,6 +159,7 @@ pub struct Config {
     pub ve_id: AccountId,
     pub constitution_id: AccountId,
     pub agent_id: AccountId,
+    pub fees_id: AccountId,
     pub hos_voting_period_ns: U64,
     pub proposal_bond: U128,
     pub tiers: Vec<(Tier, TierConfig)>,
@@ -165,6 +179,7 @@ pub struct Contract {
     ve_id: AccountId,
     constitution_id: AccountId,
     agent_id: AccountId,
+    fees_id: AccountId,
     hos_voting_period_ns: u64,
     proposal_bond: u128,
     tiers: IterableMap<Tier, TierConfig>,
@@ -176,10 +191,12 @@ pub struct Contract {
 #[near]
 impl Contract {
     #[init]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         ve_id: AccountId,
         constitution_id: AccountId,
         agent_id: AccountId,
+        fees_id: AccountId,
         hos_voting_period_ns: U64,
         proposal_bond: U128,
         tiers: Vec<(Tier, TierConfig)>,
@@ -188,6 +205,7 @@ impl Contract {
             ve_id,
             constitution_id,
             agent_id,
+            fees_id,
             hos_voting_period_ns: hos_voting_period_ns.0,
             proposal_bond: proposal_bond.0,
             tiers: IterableMap::new(StorageKey::Tiers),
@@ -369,6 +387,7 @@ impl Contract {
             ve_id: self.ve_id.clone(),
             constitution_id: self.constitution_id.clone(),
             agent_id: self.agent_id.clone(),
+            fees_id: self.fees_id.clone(),
             hos_voting_period_ns: U64(self.hos_voting_period_ns),
             proposal_bond: U128(self.proposal_bond),
             tiers: self.tiers.iter().map(|(t, c)| (*t, c.clone())).collect(),
@@ -433,6 +452,18 @@ impl Contract {
                 NearToken::from_yoctonear(0),
                 GAS_CONSTITUTION_CALL,
             ),
+            ProposalKind::SetFeeMode { mode } => Promise::new(self.fees_id.clone()).function_call(
+                "set_mode".to_string(),
+                serde_json::json!({ "mode": mode }).to_string().into_bytes(),
+                NearToken::from_yoctonear(0),
+                GAS_CONSTITUTION_CALL,
+            ),
+            ProposalKind::Allocate { amount, destination } => Promise::new(self.agent_id.clone()).function_call(
+                "treasury_allocate".to_string(),
+                serde_json::json!({ "amount": amount, "destination": destination }).to_string().into_bytes(),
+                NearToken::from_yoctonear(0),
+                GAS_HOS_MANAGE,
+            ),
             ProposalKind::FunctionCall { receiver_id, actions } => {
                 let mut promise = Promise::new(receiver_id.clone());
                 for a in actions {
@@ -471,6 +502,10 @@ pub fn validate_kind(tier: Tier, kind: &ProposalKind) {
             tier == TIER_PARAMS && HOS_MANAGE_METHODS.contains(&method.as_str()) && is_json_object(args_json)
         }
         ProposalKind::HosVote { .. } => tier == TIER_MISSIONS,
+        ProposalKind::SetFeeMode { mode } => tier == TIER_PARAMS && FEE_DESTINATIONS.contains(&mode.as_str()),
+        ProposalKind::Allocate { amount, destination } => {
+            tier == TIER_PARAMS && amount.0 > 0 && FEE_DESTINATIONS.contains(&destination.as_str())
+        }
     };
     require!(ok, "Proposal kind not allowed for this tier");
 }
@@ -519,6 +554,7 @@ mod tests {
             accounts(0),
             accounts(1),
             "agent.near".parse().unwrap(),
+            "fees.near".parse().unwrap(),
             U64(2 * DAY_NS),
             U128(10),
             vec![(1, tier(14, 6_667)), (2, tier(7, 6_000)), (3, tier(2, 5_001))],
@@ -663,6 +699,23 @@ mod tests {
     fn hos_manage_rejects_other_methods() {
         let (mut ctx, mut c) = setup();
         propose(&mut ctx, &mut c, 2, ProposalKind::HosManage { method: "hos_configure".into(), args_json: "{}".into() });
+    }
+
+    #[test]
+    fn fee_mode_and_allocate_at_tier_two() {
+        let (mut ctx, mut c) = setup();
+        propose(&mut ctx, &mut c, 2, ProposalKind::SetFeeMode { mode: "Buyback".into() });
+        let id = propose(&mut ctx, &mut c, 2, ProposalKind::Allocate { amount: U128(5), destination: "HolderRewards".into() });
+        cast(&mut ctx, &mut c, id, accounts(3), Choice::For, 200);
+        testing_env!(ctx.block_timestamp(1 + 3 * DAY_NS).build());
+        assert_eq!(c.finalize(id), Status::Queued);
+    }
+
+    #[test]
+    #[should_panic(expected = "not allowed for this tier")]
+    fn fee_mode_rejects_unknown() {
+        let (mut ctx, mut c) = setup();
+        propose(&mut ctx, &mut c, 2, ProposalKind::SetFeeMode { mode: "SendToMe".into() });
     }
 
     #[test]

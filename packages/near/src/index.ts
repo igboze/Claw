@@ -1,7 +1,7 @@
 // Minimal, dependency-free NEAR JSON-RPC client plus typed views for each contract.
 // Writes go through wallets (web) or the agent's own key (bridge), never through here.
 
-import type { ConstitutionView, HosInfo, HosMandate, LockView, MissionView, Proposal, Receipt } from "@clawdao/types";
+import type { ConstitutionView, FeeState, HosInfo, HosMandate, LockView, MissionView, Proposal, Receipt } from "@clawdao/types";
 
 export interface Accounts {
   token: string;
@@ -9,6 +9,8 @@ export interface Accounts {
   governor: string;
   constitution: string;
   agent: string;
+  /** Fee router; optional so older deployments keep working. */
+  fees?: string;
 }
 
 export function accountsFromEnv(env: Record<string, string | undefined> = process.env): Accounts {
@@ -23,6 +25,7 @@ export function accountsFromEnv(env: Record<string, string | undefined> = proces
     governor: need("GOVERNOR_CONTRACT"),
     constitution: need("CONSTITUTION_CONTRACT"),
     agent: need("AGENT_CONTRACT"),
+    fees: env.FEES_CONTRACT || undefined,
   };
 }
 
@@ -118,6 +121,16 @@ export class ClawViews {
   }
   approvedMeasurements() {
     return this.rpc.view<unknown[]>(this.accounts.agent, "get_approved_measurements");
+  }
+  feeState() {
+    if (!this.accounts.fees) throw new Error("FEES_CONTRACT not set");
+    return this.rpc.view<FeeState>(this.accounts.fees, "get_state");
+  }
+  pendingRewards(account_id: string) {
+    return this.rpc.view<string>(this.accounts.ve, "pending_rewards", { account_id });
+  }
+  rewardsInfo() {
+    return this.rpc.view<[string, string]>(this.accounts.ve, "rewards_info");
   }
   hosInfo() {
     return this.rpc.view<HosInfo>(this.accounts.agent, "hos_info");

@@ -84,7 +84,35 @@ export type ProposalKind =
       };
     }
   | { HosManage: { method: HosManageMethod; args_json: string } }
-  | { HosVote: { hos_proposal_id: number } };
+  | { HosVote: { hos_proposal_id: number } }
+  | { SetFeeMode: { mode: FeeMode } }
+  | { Allocate: { amount: U128; destination: FeeMode } };
+
+/** Where 80% of trading fees (or an allocation of treasury NEAR) goes. */
+export const FEE_MODES = ["StakeHoS", "HolderRewards", "Buyback"] as const;
+export type FeeMode = (typeof FEE_MODES)[number];
+
+export interface FeeState {
+  mode: FeeMode;
+  mode_unlocked: boolean;
+  mcap_threshold_usd: U128;
+  streak_days: number;
+  last_mcap_usd: U128;
+  dev_wallet: string;
+  dev_bps: number;
+  pending_near: U128;
+  buyback_near: U128;
+  totals: {
+    near_from_fees: U128;
+    to_dev: U128;
+    to_hos: U128;
+    to_holders: U128;
+    to_buyback: U128;
+    claw_burned: U128;
+  };
+  dex: { dex_id: string; wrap_id: string; claw_pool_id: number; usd_pool_id: number; usd_token_id: string; usd_decimals: number };
+  limits: { max_swap_per_call: U128; max_buyback_per_call: U128; max_slippage_bps: number };
+}
 
 /** Agent contract methods a Tier 2 HosManage proposal may call. */
 export const HOS_MANAGE_METHODS = ["hos_lock", "hos_begin_unlock", "hos_end_unlock", "hos_withdraw", "hos_staking"] as const;
@@ -94,6 +122,8 @@ export interface HosInfo {
   config: { venear_id: string; voting_id: string; max_locked: U128; vote_storage_fee: U128 } | null;
   lockup_account_id: string | null;
   locked: U128;
+  locked_from_fees: U128;
+  links: { fee_router_id: string; ve_id: string } | null;
 }
 
 export interface HosMandate {
