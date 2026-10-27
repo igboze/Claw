@@ -6,6 +6,8 @@ import type { AgentAction } from "@clawdao/types";
 import type { BridgeConfig } from "./config.js";
 import { EvmSigner } from "./evm.js";
 import { taskId } from "./task.js";
+import { MarketClient } from "./market.js";
+import { marketRoutes } from "./market-routes.js";
 
 const U128 = z.string().regex(/^\d+$/);
 const accountId = z.string().min(2).max(64);
@@ -53,7 +55,14 @@ export function buildApp(deps: { shade: ShadeClient; views: ClawViews; cfg: Brid
     return c.json({ error: err.message }, 500);
   });
 
-  app.get("/health", (c) => c.json({ ok: true, worker: shade.accountId() }));
+  app.get("/health", (c) => c.json({ ok: true, worker: shade.accountId(), market: !!cfg.marketToken }));
+
+  // Agent Market (self-hosted seller). Bids are checked against on-chain work missions.
+  if (cfg.marketToken) {
+    app.route("/market", marketRoutes(new MarketClient(cfg.marketToken, cfg.marketApiUrl), views));
+  } else {
+    app.all("/market/*", (c) => c.json({ error: "Agent Market not configured (MARKET_AGENT_TOKEN)" }, 503));
+  }
 
   // ---- reads (chain is the source of truth; no cache) ----
   app.get("/constitution", async (c) => c.json(await views.constitution()));

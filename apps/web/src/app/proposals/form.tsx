@@ -37,6 +37,7 @@ export function ProposalForm() {
   const [title, setTitle] = useState("");
   const [bodyUri, setBodyUri] = useState("");
   const [m, setM] = useState({ id: "", title: "", goal: "", asset: "near", budget: "", max: "", deadline: "", metric: "", chainSig: false });
+  const [work, setWork] = useState({ on: false, tags: "", minPrice: "5", maxOpen: "3", currencies: "USDC" });
   const [raw, setRaw] = useState("{}");
   const [msg, setMsg] = useState<string>();
 
@@ -50,11 +51,19 @@ export function ProposalForm() {
               title: m.title,
               goal: m.goal,
               asset: m.asset,
-              budget: toRaw(m.budget),
-              max_per_action: toRaw(m.max),
+              budget: work.on ? "0" : toRaw(m.budget),
+              max_per_action: work.on ? "0" : toRaw(m.max),
               deadline: (BigInt(new Date(m.deadline).getTime()) * 1_000_000n).toString(),
               metric: m.metric,
-              allow_chain_sig: m.chainSig,
+              allow_chain_sig: work.on ? false : m.chainSig,
+              work: work.on
+                ? {
+                    tags: work.tags.split(",").map((t) => t.trim()).filter(Boolean),
+                    min_price_cents: Math.round(Number(work.minPrice) * 100),
+                    max_open: Number(work.maxOpen),
+                    currencies: work.currencies.split(",").map((t) => t.trim()).filter(Boolean),
+                  }
+                : null,
             }),
           },
         };
@@ -143,6 +152,32 @@ export function ProposalForm() {
           <Input value={bodyUri} onChange={(e) => setBodyUri(e.target.value)} placeholder="ipfs://" />
         </label>
 
+        {kind === "SetMission" && (
+          <label className="flex items-center gap-2 text-sm">
+            <input type="checkbox" checked={work.on} onChange={(e) => setWork({ ...work, on: e.target.checked })} />
+            Work mission: the agent earns on NEAR AI Agent Market (never spends; budget is 0)
+          </label>
+        )}
+        {kind === "SetMission" && work.on && (
+          <div className="grid gap-4 sm:grid-cols-2">
+            <label className={field}>
+              <span className="text-muted-foreground">Job tags it may take (comma separated)</span>
+              <Input value={work.tags} onChange={(e) => setWork({ ...work, tags: e.target.value })} placeholder="research, near, governance" />
+            </label>
+            <label className={field}>
+              <span className="text-muted-foreground">Minimum price per job (USD)</span>
+              <Input value={work.minPrice} onChange={(e) => setWork({ ...work, minPrice: e.target.value })} inputMode="decimal" />
+            </label>
+            <label className={field}>
+              <span className="text-muted-foreground">Most jobs open at once</span>
+              <Input value={work.maxOpen} onChange={(e) => setWork({ ...work, maxOpen: e.target.value })} inputMode="numeric" />
+            </label>
+            <label className={field}>
+              <span className="text-muted-foreground">Payout currencies</span>
+              <Input value={work.currencies} onChange={(e) => setWork({ ...work, currencies: e.target.value })} />
+            </label>
+          </div>
+        )}
         {kind === "SetMission" && (
           <div className="grid gap-4 sm:grid-cols-2">
             {mi("id", "Mission id")}

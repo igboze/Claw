@@ -29,7 +29,7 @@ async function broadcast(text: string) {
 }
 
 // ---- event feed: poll new indexed events of the kinds people care about ----
-const KINDS = ["proposal_created", "proposal_finalized", "proposal_executed", "receipt", "mission_set", "paused", "constitution_updated", "hos_mandate", "hos_vote", "fee_mode_unlocked", "fee_mode_set", "buyback"];
+const KINDS = ["proposal_created", "proposal_finalized", "proposal_executed", "receipt", "mission_set", "paused", "constitution_updated", "hos_mandate", "hos_vote", "fee_mode_unlocked", "fee_mode_set", "buyback", "earning"];
 
 async function pollEvents() {
   const last = Number((await redis.get("notifier:last_event_id")) ?? 0);

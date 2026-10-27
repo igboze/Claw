@@ -95,7 +95,10 @@ function MissionList() {
             <Card className="h-full transition-colors hover:border-primary/50">
               <div className="flex items-center justify-between gap-2">
                 <h2 className="font-medium">{m.title}</h2>
-                <Badge>{m.status}</Badge>
+                <span className="flex gap-1">
+                  {m.work ? <Badge tone="Queued">Work</Badge> : null}
+                  <Badge>{m.status}</Badge>
+                </span>
               </div>
               <p className="mt-1 line-clamp-2 text-sm text-muted-foreground">{m.goal}</p>
               <div className="mt-3">

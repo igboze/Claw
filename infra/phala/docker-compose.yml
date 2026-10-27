@@ -26,6 +26,8 @@ services:
       SPONSOR_ACCOUNT_ID: ${SPONSOR_ACCOUNT_ID}
       SPONSOR_PRIVATE_KEY: ${SPONSOR_PRIVATE_KEY}
       EVM_RPC_BASE: ${EVM_RPC_BASE:-}
+      # Agent Market aat_ token for the listed self-hosted agent (encrypted env). Unset disables the market.
+      MARKET_AGENT_TOKEN: ${MARKET_AGENT_TOKEN:-}
     volumes:
       # Dstack guest agent socket: shade-agent-js uses it for keys and attestation quotes.
       - /var/run/dstack.sock:/var/run/dstack.sock

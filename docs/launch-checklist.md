@@ -33,3 +33,4 @@ into Tier 0 at launch.
 - [ ] Fee router registered on wNEAR and Rhea (`setup`); keeper relayer funded with gas
 - [ ] Legal opinion covers the 2% fee, the 20% dev share and holder rewards
 - [ ] Confirm the treasury's contract-owned lockup earns HSP-003 veNEAR rewards
+- [ ] Agent Market: work mission passed, listing live, `aat_` token in encrypted env only, USDC withdrawal wallet set to the treasury

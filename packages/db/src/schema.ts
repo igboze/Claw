@@ -94,7 +94,22 @@ export const missions = pgTable("missions", {
   status: text("status").notNull(),
   metric: text("metric").notNull(),
   allowChainSig: boolean("allow_chain_sig").notNull().default(false),
+  /** Agent Market work terms; null for spending missions. */
+  work: jsonb("work"),
   height: big("height").notNull(),
+});
+
+export const marketEarnings = pgTable("market_earnings", {
+  id: big("id").primaryKey(),
+  missionId: text("mission_id").notNull(),
+  assignmentId: text("assignment_id").notNull().unique(),
+  jobId: text("job_id").notNull(),
+  amount: text("amount").notNull(),
+  amountCents: big("amount_cents").notNull(),
+  currency: text("currency").notNull(),
+  deliverableHash: text("deliverable_hash"),
+  height: big("height").notNull(),
+  blockTs: ts("block_ts").notNull(),
 });
 
 export const receipts = pgTable("receipts", {

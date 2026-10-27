@@ -54,6 +54,17 @@ trait Constitution {
         reasoning_uri: String,
         amount: U128,
     ) -> u64;
+    #[allow(clippy::too_many_arguments)]
+    fn record_earning(
+        &mut self,
+        mission_id: String,
+        assignment_id: String,
+        job_id: String,
+        amount: String,
+        amount_cents: u64,
+        currency: String,
+        deliverable_hash: Option<String>,
+    ) -> u64;
 }
 
 #[ext_contract(ext_ft)]
@@ -344,6 +355,27 @@ impl Contract {
         emit_event("foreign_tx", &serde_json::json!({"task_id": task_id, "chain": chain, "tx_hash": tx_hash}));
     }
 
+    /// An Agent Market assignment the buyer accepted. Recorded once per assignment as a Tier 4
+    /// earning under the work mission it was taken for. Earnings stay on the marketplace
+    /// balance until holders vote to withdraw and allocate them.
+    #[allow(clippy::too_many_arguments)]
+    pub fn report_earning(
+        &mut self,
+        mission_id: String,
+        assignment_id: String,
+        job_id: String,
+        amount: String,
+        amount_cents: u64,
+        currency: String,
+        deliverable_hash: Option<String>,
+    ) -> Promise {
+        self.require_valid_agent();
+        require!(assignment_id.len() <= 64 && job_id.len() <= 64 && amount.len() <= 40, "Field too long");
+        ext_constitution::ext(self.constitution_id.clone())
+            .with_static_gas(GAS_RECEIPT)
+            .record_earning(mission_id, assignment_id, job_id, amount, amount_cents, currency, deliverable_hash)
+    }
+
     /// Heartbeat so the status page can show worker uptime.
     pub fn heartbeat(&mut self, loop_epoch: U64) {
         self.require_valid_agent();
@@ -603,6 +635,23 @@ mod tests {
         c.remove_measurements(create_mock_full_measurements_hex());
         testing_env!(ctx.predecessor_account_id(accounts(3)).build());
         c.propose_action("t1".into(), "m1".into(), "h".into(), action(), "r".into());
+    }
+
+    #[test]
+    fn registered_worker_reports_earnings() {
+        let mut ctx = VMContextBuilder::new();
+        let mut c = setup(&mut ctx);
+        register(&mut ctx, &mut c);
+        c.report_earning("w1".into(), "a-1".into(), "j-1".into(), "12.50".into(), 1250, "USDC".into(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Not a registered agent")]
+    fn strangers_cannot_report_earnings() {
+        let mut ctx = VMContextBuilder::new();
+        let mut c = setup(&mut ctx);
+        testing_env!(ctx.predecessor_account_id(accounts(5)).build());
+        c.report_earning("w1".into(), "a-1".into(), "j-1".into(), "1".into(), 100, "USDC".into(), None);
     }
 
     #[test]

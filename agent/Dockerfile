@@ -45,6 +45,7 @@ RUN chmod +x /usr/local/bin/clawdao-entrypoint
 
 # The bridge listens on 127.0.0.1 only; the IronClaw web UI stays on localhost too.
 ENV BRIDGE_PORT=3140 \
+    MARKET_API_URL=https://market.near.ai \
     IRONCLAW_REBORN_SERVE_HOST=127.0.0.1 \
     ROUTINES_ENABLED=true \
     ROUTINES_CRON_INTERVAL=60

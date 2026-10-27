@@ -11,6 +11,8 @@ import { ClawViews, NearRpc, accountsFromEnv } from "@clawdao/near";
 import { loopEpoch } from "@clawdao/types";
 import { buildApp } from "./app.js";
 import { loadConfig } from "./config.js";
+import { MarketClient } from "./market.js";
+import { reportEarnings } from "./market-routes.js";
 
 const cfg = loadConfig();
 
@@ -55,6 +57,17 @@ async function heartbeat() {
 }
 heartbeat().catch((e) => console.error("heartbeat failed", e));
 setInterval(() => heartbeat().catch((e) => console.error("heartbeat failed", e)), 5 * 60_000);
+
+// Record accepted Agent Market jobs on-chain as Tier 4 earnings.
+if (cfg.marketToken) {
+  const market = new MarketClient(cfg.marketToken, cfg.marketApiUrl);
+  const report = () =>
+    reportEarnings(market, views, shade)
+      .then((n) => n && console.log(`recorded ${n} Agent Market earning(s)`))
+      .catch((e) => console.error("earnings report failed", e));
+  report();
+  setInterval(report, 2 * 60_000);
+}
 
 // Localhost only: IronClaw runs in the same container; nothing outside may call this.
 serve({ fetch: app.fetch, hostname: "127.0.0.1", port: cfg.port }, (info) => {

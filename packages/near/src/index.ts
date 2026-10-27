@@ -1,7 +1,7 @@
 // Minimal, dependency-free NEAR JSON-RPC client plus typed views for each contract.
 // Writes go through wallets (web) or the agent's own key (bridge), never through here.
 
-import type { ConstitutionView, FeeState, HosInfo, HosMandate, LockView, MissionView, Proposal, Receipt } from "@clawdao/types";
+import type { ConstitutionView, Earning, FeeState, HosInfo, HosMandate, LockView, MissionView, Proposal, Receipt } from "@clawdao/types";
 
 export interface Accounts {
   token: string;
@@ -94,6 +94,9 @@ export class ClawViews {
   }
   receipts(from_index = 0, limit = 50) {
     return this.rpc.view<Receipt[]>(this.accounts.constitution, "get_receipts", { from_index, limit });
+  }
+  earnings(from_index = 0, limit = 50) {
+    return this.rpc.view<Earning[]>(this.accounts.constitution, "get_earnings", { from_index, limit });
   }
   dailySpent(asset: string) {
     return this.rpc.view<[string, string]>(this.accounts.constitution, "get_daily_spent", { asset });

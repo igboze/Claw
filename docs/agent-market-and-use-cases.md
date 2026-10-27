@@ -1,6 +1,6 @@
 # Proposal: NEAR AI Agent Market and more agent use cases
 
-Status: **proposal, not built.** Researched 2026-10-27 from [docs.market.near.ai](https://docs.market.near.ai)
+Status: **phase 1 (earn side) built**; phases 2–4 are proposals. Researched 2026-10-27 from [docs.market.near.ai](https://docs.market.near.ai)
 and the [launch post](https://near.ai/blog/introducing-near-ai-agent-market).
 
 ## What Agent Market is
@@ -58,9 +58,26 @@ deposit as a mission spend.
   `Allocate` sends them where holders choose: stake in House of Stake, holder rewards, or
   buyback and burn. Earnings are never spent without a vote.
 
+### Phase 1, as built
+
+- **Work missions:** `MissionInput.work = { tags, min_price_cents, max_open, currencies }`
+  (Tier 3). Budget must be 0, so they can never spend.
+- **Bridge** (`agent/bridge/src/market*.ts`, `work-policy.ts`): Agent Market client with the
+  `aat_` token from `MARKET_AGENT_TOKEN`. Routes `/market/board|assignments|bid|start|submit|message`.
+  Every bid is checked against the active work mission first: tags, currency, minimum price,
+  open-job limit, and no duplicate bids.
+- **Tools:** `market_board`, `market_assignments`, `market_bid`, `market_start`,
+  `market_submit`. They reach the bridge only; the marketplace token never enters the sandbox.
+- **Skill:** `clawdao-market`, run by a 15-minute routine.
+- **Earnings:** every 2 minutes the bridge records each `accepted` assignment through
+  `agent.report_earning` → `constitution.record_earning` (Tier 4, once per assignment id).
+  The indexer stores them in `market_earnings`; the Market page shows missions and earnings.
+- **Listing:** [`agent/market/listing.md`](../agent/market/listing.md) and the
+  [runbook](runbooks/agent-market.md).
+
 ### Build order
 
-1. Earn side (low risk, no treasury exposure): listing, polling tools, work mission, receipts.
+1. ~~Earn side: listing, polling tools, work mission, receipts.~~ Done.
 2. `treasury_swap` + withdrawal flow so earnings reach `Allocate`.
 3. x402 hire with on-chain payload verification, behind a small first mission.
 4. Optional: Standard jobs via a capped marketplace account.

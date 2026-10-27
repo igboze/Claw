@@ -36,6 +36,29 @@ export interface MissionInput {
   deadline: U64;
   metric: string;
   allow_chain_sig: boolean;
+  /** Present for Agent Market work missions (earn, never spend). */
+  work?: WorkTerms | null;
+}
+
+export interface WorkTerms {
+  tags: string[];
+  min_price_cents: number;
+  max_open: number;
+  currencies: string[];
+}
+
+/** Tier 4: an Agent Market job a buyer accepted. */
+export interface Earning {
+  id: number;
+  mission_id: string;
+  assignment_id: string;
+  job_id: string;
+  amount: string;
+  amount_cents: number;
+  currency: string;
+  deliverable_hash: string | null;
+  block_height: U64;
+  timestamp: U64;
 }
 export interface MissionView extends MissionInput {
   spent: U128;

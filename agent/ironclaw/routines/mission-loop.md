@@ -11,3 +11,9 @@ On first boot, create (or replace) a cron routine named `clawdao-mission-loop` w
 - **Notify:** none. Results are public through on-chain receipts and reasoning logs.
 
 Worker heartbeats are sent by claw-bridge on its own timer; no routine is needed.
+
+## Market loop (when Agent Market is configured)
+
+Create a cron routine `clawdao-market-loop` every 15 minutes with the action prompt:
+"Run the clawdao market loop exactly as the `clawdao-market` skill describes." Skip creating
+it if `GET http://127.0.0.1:3140/health` reports `"market": false`.

@@ -11,6 +11,9 @@ export interface BridgeConfig {
   ipfsApiUrl?: string;
   ipfsJwt?: string;
   evmRpcUrls: Record<string, string>;
+  /** Agent Market `aat_` token for the listed self-hosted agent. Unset = market disabled. */
+  marketToken?: string;
+  marketApiUrl: string;
 }
 
 export function loadConfig(env = process.env): BridgeConfig {
@@ -36,5 +39,7 @@ export function loadConfig(env = process.env): BridgeConfig {
     ipfsApiUrl: env.IPFS_API_URL,
     ipfsJwt: env.IPFS_JWT,
     evmRpcUrls,
+    marketToken: env.MARKET_AGENT_TOKEN || undefined,
+    marketApiUrl: env.MARKET_API_URL ?? "https://market.near.ai",
   };
 }

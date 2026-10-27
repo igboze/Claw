@@ -30,6 +30,8 @@ export function formatEvent(kind: string, d: P, web: string): string | null {
       return `🗳 Trading fees now go to: ${str(d.mode)}. ${web}/fees`;
     case "buyback":
       return Number(d.claw_bought ?? 0) > 0 ? `🔥 Buyback burned ${formatAmount(str(d.claw_bought))} CLAW.` : null;
+    case "earning":
+      return `💼 The agent earned ${str(d.amount)} ${str(d.currency)} on Agent Market (mission ${str(d.mission_id)}). Holders vote on how it is used. ${web}/market`;
     case "paused":
       return `⏸ Agent paused by ${str(d.by)}.`;
     default:

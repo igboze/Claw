@@ -17,7 +17,9 @@ Top risks first, with where each defence lives in the code.
 | 11 | **Fee swap sandwiching** | Router swaps use an on-chain quote less `max_slippage_bps` (1%) and at most `max_swap_per_call` per call; both tunable only by Tier 1 | `fees::swap_fees`, `fees::buyback` |
 | 12 | **Market-cap gate pumped** | Needs 3 consecutive UTC days at ≥ $100k from pool prices; unlocking only enables a vote, holders still decide | `fees::record_observation` |
 | 13 | **Fee diverted** | Rate fixed in code; dev share capped at 20% in code; dev wallet and DEX list change only by Tier 1; mode changes only by Tier 2 after the gate | `token`, `fees::set_dev_wallet` |
-| 14 | **Spoofed bounty payee** | TODO before mainnet: NEP-413 signed submission | `bounty-intake` |
+| 14 | **Agent takes off-mission market work** | Bridge checks every bid against the on-chain work mission (tags, currency, min price, max open); token can't edit listing or payouts; job text treated as data | `bridge/work-policy.ts`, `clawdao-market` skill |
+| 15 | **False earnings reported** | Only attested workers can report; once per assignment id; each earning names the assignment, so anyone can check it on Agent Market | `agent::report_earning`, `constitution::record_earning` |
+| 16 | **Spoofed bounty payee** | TODO before mainnet: NEP-413 signed submission | `bounty-intake` |
 
 ## Assumptions
 

@@ -5,7 +5,12 @@
 //! - Tier 1: constitution articles. Governor only (Tier 1 vote).
 //! - Tier 2: operating articles and parameters (loop interval, daily caps). Governor only.
 //! - Tier 3: missions with budget, deadline and metric. Governor only.
-//! - Tier 4: receipts. Written only by the agent contract after an action.
+//! - Tier 4: receipts and earnings. Written only by the agent contract: a receipt after
+//!   every action that spent, an earning after every Agent Market job a buyer accepted.
+//!
+//! Work missions: a Tier 3 mission with `work` terms lets the agent take paid jobs on the
+//! NEAR AI Agent Market (tags, minimum price, how many at once). Work missions never spend:
+//! their budget must be zero, so `spend_check` always rejects them.
 //!
 //! `hash` is sha256 over tiers 0 to 3 (articles, params, mission definitions). It changes
 //! whenever governance changes anything the agent must obey, and `spend_check` rejects
@@ -63,6 +68,41 @@ pub struct MissionInput {
     pub metric: String,
     /// May this mission request Chain Signatures for other chains?
     pub allow_chain_sig: bool,
+    /// Present for Agent Market work missions (earn, never spend).
+    #[serde(default)]
+    pub work: Option<WorkTerms>,
+}
+
+/// What jobs the agent may take on the NEAR AI Agent Market under one work mission.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug, PartialEq)]
+pub struct WorkTerms {
+    /// Job tags it may bid on (at least one must match).
+    pub tags: Vec<String>,
+    /// Lowest price it may bid, in US cents (USD and USDC are 1:1 on Agent Market).
+    pub min_price_cents: u64,
+    /// Most jobs open at once (pending bids plus in-progress assignments).
+    pub max_open: u32,
+    /// Accepted payout currencies, e.g. ["USDC", "USD"].
+    pub currencies: Vec<String>,
+}
+
+/// An Agent Market job a buyer accepted. Reported by an attested worker; the assignment id
+/// lets anyone check it against the marketplace.
+#[near(serializers = [borsh, json])]
+#[derive(Clone, Debug)]
+pub struct Earning {
+    pub id: u64,
+    pub mission_id: String,
+    pub assignment_id: String,
+    pub job_id: String,
+    /// Escrow amount as the marketplace states it (before its 5% fee).
+    pub amount: String,
+    pub amount_cents: u64,
+    pub currency: String,
+    pub deliverable_hash: Option<String>,
+    pub block_height: U64,
+    pub timestamp: U64,
 }
 
 #[near(serializers = [borsh, json])]
@@ -121,6 +161,8 @@ enum StorageKey {
     Missions,
     DailySpent,
     Receipts,
+    Earnings,
+    EarnedAssignments,
 }
 
 #[near(contract_state)]
@@ -135,6 +177,8 @@ pub struct Contract {
     missions: IterableMap<String, Mission>,
     daily_spent: LookupMap<(Asset, u64), u128>,
     receipts: Vector<Receipt>,
+    earnings: Vector<Earning>,
+    earned_assignments: near_sdk::store::LookupSet<String>,
 }
 
 #[near]
@@ -157,6 +201,8 @@ impl Contract {
             missions: IterableMap::new(StorageKey::Missions),
             daily_spent: LookupMap::new(StorageKey::DailySpent),
             receipts: Vector::new(StorageKey::Receipts),
+            earnings: Vector::new(StorageKey::Earnings),
+            earned_assignments: near_sdk::store::LookupSet::new(StorageKey::EarnedAssignments),
         };
         this.bump("genesis");
         this
@@ -205,6 +251,12 @@ impl Contract {
         assert_caller(&self.governor_id, "the Governor");
         require!(!mission.id.is_empty() && mission.id.len() <= MAX_ID, "Bad mission id");
         require!(mission.max_per_action.0 <= mission.budget.0, "max_per_action above budget");
+        if let Some(w) = &mission.work {
+            require!(mission.budget.0 == 0 && !mission.allow_chain_sig, "Work missions earn and never spend: budget must be 0");
+            require!(!w.tags.is_empty() && w.tags.len() <= 10, "Work missions need 1 to 10 tags");
+            require!(w.max_open >= 1 && w.max_open <= 20, "max_open must be 1 to 20");
+            require!(!w.currencies.is_empty(), "Name at least one currency");
+        }
         let spent = self.missions.get(&mission.id).map(|m| m.spent).unwrap_or(U128(0));
         require!(mission.budget.0 >= spent.0, "Budget below amount already spent");
         emit_event("mission_set", &mission);
@@ -326,6 +378,53 @@ impl Contract {
             .collect()
     }
 
+    /// Tier 4: an Agent Market assignment the buyer accepted, once per assignment.
+    #[allow(clippy::too_many_arguments)]
+    pub fn record_earning(
+        &mut self,
+        mission_id: String,
+        assignment_id: String,
+        job_id: String,
+        amount: String,
+        amount_cents: u64,
+        currency: String,
+        deliverable_hash: Option<String>,
+    ) -> u64 {
+        assert_caller(&self.agent_id, "the agent contract");
+        let m = self.missions.get(&mission_id).expect("No mission");
+        let w = m.def.work.as_ref().expect("Not a work mission");
+        require!(w.currencies.contains(&currency), "Currency not allowed by the mission");
+        require!(self.earned_assignments.insert(assignment_id.clone()), "Earning already recorded");
+        let id = self.earnings.len() as u64;
+        let e = Earning {
+            id,
+            mission_id,
+            assignment_id,
+            job_id,
+            amount,
+            amount_cents,
+            currency,
+            deliverable_hash,
+            block_height: U64(env::block_height()),
+            timestamp: U64(env::block_timestamp()),
+        };
+        emit_event("earning", &e);
+        self.earnings.push(e);
+        id
+    }
+
+    pub fn get_earnings(&self, from_index: Option<u64>, limit: Option<u64>) -> Vec<Earning> {
+        let from = from_index.unwrap_or(0) as u32;
+        let limit = limit.unwrap_or(50).min(100) as u32;
+        (from..self.earnings.len().min(from.saturating_add(limit)))
+            .filter_map(|i| self.earnings.get(i).cloned())
+            .collect()
+    }
+
+    pub fn is_earning_recorded(&self, assignment_id: String) -> bool {
+        self.earned_assignments.contains(&assignment_id)
+    }
+
     pub fn receipt_count(&self) -> u64 {
         self.receipts.len() as u64
     }
@@ -366,7 +465,7 @@ fn status_of(m: &Mission, now: u64) -> MissionStatus {
         MissionStatus::Cancelled
     } else if now >= m.def.deadline.0 {
         MissionStatus::Expired
-    } else if m.spent.0 >= m.def.budget.0 {
+    } else if m.def.work.is_none() && m.spent.0 >= m.def.budget.0 {
         MissionStatus::Exhausted
     } else {
         MissionStatus::Active
@@ -414,7 +513,73 @@ mod tests {
             deadline: U64(10 * DAY_NS),
             metric: "m".into(),
             allow_chain_sig: false,
+            work: None,
         }
+    }
+
+    fn work_mission(id: &str) -> MissionInput {
+        MissionInput {
+            budget: U128(0),
+            max_per_action: U128(0),
+            work: Some(WorkTerms {
+                tags: vec!["research".into()],
+                min_price_cents: 500,
+                max_open: 3,
+                currencies: vec!["USDC".into()],
+            }),
+            ..mission(id)
+        }
+    }
+
+    #[test]
+    fn work_mission_stays_active_and_records_earnings_once() {
+        let (mut ctx, mut c) = setup();
+        as_gov(&mut ctx);
+        c.set_mission(work_mission("w1"));
+        assert_eq!(c.get_mission("w1".into()).unwrap().status, MissionStatus::Active);
+        as_agent(&mut ctx);
+        let id = c.record_earning("w1".into(), "a-1".into(), "j-1".into(), "12.500000".into(), 1250, "USDC".into(), None);
+        assert_eq!(id, 0);
+        assert!(c.is_earning_recorded("a-1".into()));
+        assert_eq!(c.get_earnings(None, None)[0].amount_cents, 1250);
+    }
+
+    #[test]
+    #[should_panic(expected = "Earning already recorded")]
+    fn earning_dedupe() {
+        let (mut ctx, mut c) = setup();
+        as_gov(&mut ctx);
+        c.set_mission(work_mission("w1"));
+        as_agent(&mut ctx);
+        c.record_earning("w1".into(), "a-1".into(), "j".into(), "1".into(), 100, "USDC".into(), None);
+        c.record_earning("w1".into(), "a-1".into(), "j".into(), "1".into(), 100, "USDC".into(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "budget must be 0")]
+    fn work_missions_cannot_spend() {
+        let (mut ctx, mut c) = setup();
+        as_gov(&mut ctx);
+        c.set_mission(MissionInput { budget: U128(10), max_per_action: U128(1), ..work_mission("w1") });
+    }
+
+    #[test]
+    #[should_panic(expected = "Not a work mission")]
+    fn earnings_need_work_mission() {
+        let (mut ctx, mut c) = setup();
+        as_gov(&mut ctx);
+        c.set_mission(mission("m1"));
+        as_agent(&mut ctx);
+        c.record_earning("m1".into(), "a".into(), "j".into(), "1".into(), 100, "USDC".into(), None);
+    }
+
+    #[test]
+    #[should_panic(expected = "Only the agent contract")]
+    fn earnings_agent_only() {
+        let (mut ctx, mut c) = setup();
+        as_gov(&mut ctx);
+        c.set_mission(work_mission("w1"));
+        c.record_earning("w1".into(), "a".into(), "j".into(), "1".into(), 100, "USDC".into(), None);
     }
 
     fn as_gov(ctx: &mut VMContextBuilder) {

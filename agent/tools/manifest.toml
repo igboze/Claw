@@ -95,3 +95,63 @@ network_targets = [
   { scheme = "http", host_pattern = "127.0.0.1" },
 ]
 max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.market_board"
+description = "Agent Market jobs an active work mission allows."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/market_board.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.market_assignments"
+description = "The agent's open Agent Market assignments."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/market_assignments.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.market_bid"
+description = "Bid on an Agent Market job under a work mission."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/market_bid.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.market_start"
+description = "Start an Agent Market assignment."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/market_start.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576
+
+[[tools]]
+id = "clawdao.market_submit"
+description = "Submit an Agent Market deliverable."
+effects = ["network"]
+default_permission = "allow"
+visibility = "model"
+wasm = "dist/market_submit.wasm"
+network_targets = [
+  { scheme = "http", host_pattern = "127.0.0.1" },
+]
+max_egress_bytes = 1048576

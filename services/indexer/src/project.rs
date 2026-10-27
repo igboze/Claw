@@ -192,6 +192,11 @@ pub async fn apply(tx: &mut Transaction<'_, Postgres>, c: &Ctx<'_>, ev: &Event) 
             .bind(h)
             .execute(&mut **tx)
             .await?;
+            sqlx::query("UPDATE missions SET work = $1 WHERE id = $2")
+                .bind(if d["work"].is_null() { None } else { Some(&d["work"]) })
+                .bind(s(d, "id"))
+                .execute(&mut **tx)
+                .await?;
         }
         "mission_cancelled" => {
             sqlx::query("UPDATE missions SET status = 'Cancelled', height = $1 WHERE id = $2")
@@ -265,6 +270,25 @@ pub async fn apply(tx: &mut Transaction<'_, Postgres>, c: &Ctx<'_>, ev: &Event) 
         }
         "agent_removed" => {
             sqlx::query("DELETE FROM agent_workers WHERE account_id = $1").bind(s(d, "account_id")).execute(&mut **tx).await?;
+        }
+        "earning" => {
+            sqlx::query(&format!(
+                "INSERT INTO market_earnings (id, mission_id, assignment_id, job_id, amount, amount_cents, currency, deliverable_hash, height, block_ts)
+                 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, {}) ON CONFLICT (id) DO NOTHING",
+                ts(10)
+            ))
+            .bind(i(d, "id"))
+            .bind(s(d, "mission_id"))
+            .bind(s(d, "assignment_id"))
+            .bind(s(d, "job_id"))
+            .bind(s(d, "amount"))
+            .bind(i(d, "amount_cents"))
+            .bind(s(d, "currency"))
+            .bind(opt(d, "deliverable_hash"))
+            .bind(h)
+            .bind(s(d, "timestamp"))
+            .execute(&mut **tx)
+            .await?;
         }
         "hos_mandate" => {
             sqlx::query(

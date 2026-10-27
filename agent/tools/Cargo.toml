@@ -10,6 +10,11 @@ members = [
     "pay_bounty",
     "post_social",
     "publish_log",
+    "market_board",
+    "market_assignments",
+    "market_bid",
+    "market_start",
+    "market_submit",
 ]
 
 [workspace.package]

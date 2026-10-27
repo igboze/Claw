@@ -2,7 +2,7 @@ import { initTRPC } from "@trpc/server";
 import { and, asc, desc, eq, inArray, lt, sql } from "drizzle-orm";
 import { z } from "zod";
 import {
-  agentWorkers, blocksCursor, bountySubmissions, constitutionVersions, events, hosMandates, hosProposals, missions, proposals,
+  agentWorkers, blocksCursor, bountySubmissions, constitutionVersions, events, hosMandates, marketEarnings, hosProposals, missions, proposals,
   receipts, treasurySnapshots, veLocks, votes, type Db,
 } from "@clawdao/db";
 import type { ClawViews } from "@clawdao/near";
@@ -116,6 +116,41 @@ export const appRouter = t.router({
       ctx.db.select().from(agentWorkers),
     ]);
     return { info, measurements, workers };
+  }),
+
+  market: t.router({
+    /** Work missions (Agent Market) with earnings per mission. */
+    missions: t.procedure.query(async ({ ctx }) => {
+      const work = (await ctx.db.select().from(missions)).filter((m) => m.work);
+      const totals = await ctx.db
+        .select({
+          missionId: marketEarnings.missionId,
+          currency: marketEarnings.currency,
+          cents: sql<string>`sum(${marketEarnings.amountCents})`.as("cents"),
+          jobs: sql<string>`count(*)`.as("jobs"),
+        })
+        .from(marketEarnings)
+        .groupBy(marketEarnings.missionId, marketEarnings.currency);
+      return work.map((m) => ({ ...m, earnings: totals.filter((t) => t.missionId === m.id) }));
+    }),
+    earnings: t.procedure.input(page).query(({ ctx, input }) =>
+      ctx.db
+        .select()
+        .from(marketEarnings)
+        .where(input.cursor !== undefined ? lt(marketEarnings.id, input.cursor) : undefined)
+        .orderBy(desc(marketEarnings.id))
+        .limit(input.limit),
+    ),
+    totals: t.procedure.query(({ ctx }) =>
+      ctx.db
+        .select({
+          currency: marketEarnings.currency,
+          cents: sql<string>`sum(${marketEarnings.amountCents})`.as("cents"),
+          jobs: sql<string>`count(*)`.as("jobs"),
+        })
+        .from(marketEarnings)
+        .groupBy(marketEarnings.currency),
+    ),
   }),
 
   fees: t.router({
